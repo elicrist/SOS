@@ -133,7 +133,10 @@ select option{background:var(--surface)}
 <body>
 <header>
   <div class="logo" id="app-logo">Summer OS <span id="app-name-sub">/ Eli</span></div>
-  <div class="header-meta" id="hdr-date"></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="header-meta" id="hdr-date"></div>
+    <div class="header-meta" id="sync-status">synced</div>
+  </div>
 </header>
 <div class="tab-bar">
   <button class="tab-btn active" onclick="showTab('dashboard',this)">Dashboard</button>
@@ -492,20 +495,118 @@ const SS=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
 const SB_URL="https://bezcgrtihvmktxjkbfrl.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlemNncnRpaHZta3R4amtiZnJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNzQ2OTQsImV4cCI6MjA5Njg1MDY5NH0.7BhpVFAsjW0fDDvk1r9RMITYtzoosLHqsX80AAQSqA8";
 const SB_HDR={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}`};
+let syncStatus='synced';
 
+const setSyncStatus=(status)=>{syncStatus=status;const el=document.getElementById('sync-status');if(el)el.textContent=status;};
+const reportSyncError=(context,e)=>{
+  console.error('Supabase sync failed',context,e);
+  setSyncStatus('failed');
+};
+
+const sbFetchJson=async(url)=>{
+  console.log('sbFetchJson',url,SB_HDR);
+  const resp=await fetch(url,{headers:SB_HDR});
+  if(!resp.ok){
+    console.error('sbFetchJson failed',url,resp.status,await resp.text().catch(()=>''));
+    throw new Error(`Supabase fetch failed: ${resp.status}`);
+  }
+  const data=await resp.json();
+  console.log('sbFetchJson success',url,data.length!==undefined?`${data.length} rows`:'ok');
+  return data;
+};
 const sbUpsert=async(table,rows)=>{
-  if(!rows||!rows.length)return;
-  try{await fetch(`${SB_URL}/rest/v1/${table}`,{method:"POST",headers:{...SB_HDR,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify(rows)});}catch(e){}
+  if(!rows||!rows.length){console.log('sbUpsert skipped empty rows',table);return;}
+  console.log('sbUpsert start',table,rows.length,rows);
+  setSyncStatus('syncing');
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/${table}`,{method:"POST",headers:{...SB_HDR,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify(rows)});
+    if(!resp.ok){
+      console.error('sbUpsert failed',table,resp.status,await resp.text().catch(()=>''));
+      throw new Error(`Upsert ${table} failed: ${resp.status}`);
+    }
+    console.log('sbUpsert success',table);
+    setSyncStatus('synced');
+  }catch(e){reportSyncError(`sbUpsert ${table}`,e);throw e;}
 };
 const sbDelete=async(table,id)=>{
-  try{await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:"DELETE",headers:SB_HDR});}catch(e){}
+  console.log('sbDelete start',table,id);
+  setSyncStatus('syncing');
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:"DELETE",headers:SB_HDR});
+    if(!resp.ok){
+      console.error('sbDelete failed',table,id,resp.status,await resp.text().catch(()=>''));
+      throw new Error(`Delete ${table} failed: ${resp.status}`);
+    }
+    console.log('sbDelete success',table,id);
+    setSyncStatus('synced');
+  }catch(e){reportSyncError(`sbDelete ${table}`,e);throw e;}
 };
 const sbUpsertHabits=async(date,data)=>{
-  try{await fetch(`${SB_URL}/rest/v1/ec_habits`,{method:"POST",headers:{...SB_HDR,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify([{date,data}])});}catch(e){}
+  console.log('sbUpsertHabits start',date,data);
+  setSyncStatus('syncing');
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_habits`,{method:"POST",headers:{...SB_HDR,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify([{date,data}])});
+    if(!resp.ok){
+      console.error('sbUpsertHabits failed',date,resp.status,await resp.text().catch(()=>''));
+      throw new Error(`Upsert ec_habits failed: ${resp.status}`);
+    }
+    console.log('sbUpsertHabits success',date);
+    setSyncStatus('synced');
+  }catch(e){reportSyncError('sbUpsertHabits',e);throw e;}
 };
 const sbUpsertConfig=async(cfg)=>{
   const rows=Object.entries(cfg).map(([key,value])=>({key,value:String(value)}));
-  try{await fetch(`${SB_URL}/rest/v1/ec_config`,{method:"POST",headers:{...SB_HDR,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify(rows)});}catch(e){}
+  console.log('sbUpsertConfig start',rows);
+  setSyncStatus('syncing');
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_config`,{method:"POST",headers:{...SB_HDR,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify(rows)});
+    if(!resp.ok){
+      console.error('sbUpsertConfig failed',resp.status,await resp.text().catch(()=>''));
+      throw new Error(`Upsert ec_config failed: ${resp.status}`);
+    }
+    console.log('sbUpsertConfig success');
+    setSyncStatus('synced');
+  }catch(e){reportSyncError('sbUpsertConfig',e);throw e;}
+};
+
+const sbLoadAll=async()=>{
+  console.log('sbLoadAll starting');
+  setSyncStatus('syncing');
+  try{
+    const [cfgRows,savRows,gymRows,golfRows,tenRows,habitRows,notesRows]=await Promise.all([
+      sbFetchJson(`${SB_URL}/rest/v1/ec_config?select=*`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_savings?select=*`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_gym?select=*`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_golf?select=*`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_tennis?select=*`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_habits?select=*`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_notes?select=*`),
+    ]);
+    console.log('sbLoadAll fetched',{
+      cfgRows:cfgRows.length,
+      savRows:savRows.length,
+      gymRows:gymRows.length,
+      golfRows:golfRows.length,
+      tenRows:tenRows.length,
+      habitRows:habitRows.length,
+      notesRows:notesRows.length,
+    });
+
+    if(cfgRows.length){
+      cfgRows.forEach(r=>{if(r.key!==undefined)cfg[r.key]=r.value;});
+      SS('cfg',cfg);
+    }
+    if(savRows.length){savLog=savRows.map(r=>({id:r.id,date:r.date,type:r.type,amount:r.amount,note:r.note||''}));SS('sav_log',savLog);}
+    if(gymRows.length){gymLog=gymRows.map(r=>({id:r.id,date:r.date,ex:r.ex,wt:r.wt,reps:r.reps,sets:r.sets}));SS('gym_log',gymLog);}
+    if(golfRows.length){golfLog=golfRows.map(r=>({id:r.id,date:r.date,course:r.course,holes:r.holes,score:r.score,par:r.par}));SS('golf_log',golfLog);}
+    if(tenRows.length){tenLog=tenRows.map(r=>({id:r.id,date:r.date,type:r.type,opp:r.opp||'',result:r.result||'',score:r.score||'',notes:r.notes||''}));SS('ten_log',tenLog);}
+    if(habitRows.length){habitLog={};habitRows.forEach(r=>{habitLog[r.date]=r.data||{}});SS('habit_log',habitLog);}
+    if(notesRows.length){notes=notesRows.sort((a,b)=>b.id-a.id).map(r=>({id:r.id,date:r.date,title:r.title,body:r.body}));SS('ec_notes',notes);}
+    console.log('sbLoadAll complete',{
+      cfg,cfgRows,savLogLen:savLog.length,gymLogLen:gymLog.length,golfLogLen:golfLog.length,tenLogLen:tenLog.length,habitLogKeys:Object.keys(habitLog).length,notesLen:notes.length,
+    });
+    setSyncStatus('synced');
+  }catch(e){reportSyncError('sbLoadAll',e);throw e;}
 };
 
 // ── STATE ──
@@ -697,28 +798,37 @@ function applyCfg(){
 // ── NOTES ──
 let notes=LS('ec_notes',[]);
 
-function saveNote(){
+async function saveNote(){
   const title=document.getElementById('note-title').value.trim();
   const body=document.getElementById('note-body').value.trim();
   if(!title||!body)return;
   const entry={id:Date.now(),date:today(),title,body};
   notes.unshift(entry);
   SS('ec_notes',notes);
-  sbUpsertNotes(notes);
-  document.getElementById('note-title').value='';
-  document.getElementById('note-body').value='';
-  renderNotes();
+  try{
+    await sbUpsertNotes(notes);
+    document.getElementById('note-title').value='';
+    document.getElementById('note-body').value='';
+    renderNotes();
+  }catch(e){alert('Note sync failed.');}
 }
 
-function delNote(id){
+async function delNote(id){
   notes=notes.filter(n=>n.id!==id);
   SS('ec_notes',notes);
-  sbUpsertNotes(notes);
-  renderNotes();
+  try{
+    await sbUpsertNotes(notes);
+    renderNotes();
+  }catch(e){alert('Note delete sync failed.');}
 }
 
-function sbUpsertNotes(notes){
-  try{fetch(`${SB_URL}/rest/v1/ec_notes`,{method:'POST',headers:{...SB_HDR,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify(notes.map(n=>({id:n.id,date:n.date,title:n.title,body:n.body})))});}catch(e){}
+async function sbUpsertNotes(notes){
+  setSyncStatus('syncing');
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_notes`,{method:'POST',headers:{...SB_HDR,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify(notes.map(n=>({id:n.id,date:n.date,title:n.title,body:n.body})))});
+    if(!resp.ok)throw new Error(`Upsert ec_notes failed: ${resp.status}`);
+    setSyncStatus('synced');
+  }catch(e){reportSyncError('sbUpsertNotes',e);throw e;}
 }
 
 function renderNotes(){
@@ -739,13 +849,13 @@ function renderNotes(){
 }
 
 function renderSettings(){applyCfg();}
-const scfg=(k,v)=>{cfg[k]=v;SS('cfg',cfg);sbUpsertConfig(cfg);applyCfg();renderDash();renderSav();};
-function saveName(){scfg('name',document.getElementById('set-name').value||'Eli')}
-function saveTitle(){scfg('title',document.getElementById('set-title').value||'Summer OS')}
-function saveRate(){const v=parseFloat(document.getElementById('set-rate').value);if(!isNaN(v)&&v>0)scfg('rate',v);}
-function saveGoal(){const v=parseFloat(document.getElementById('set-goal').value);if(!isNaN(v))scfg('goal',v);}
-function saveStart(){const v=parseFloat(document.getElementById('set-start').value);if(!isNaN(v))scfg('start',v);}
-function saveDeadline(){const v=document.getElementById('set-dl').value;if(v)scfg('deadline',v);}
+const scfg=async(k,v)=>{console.log('saveConfig',k,v);cfg[k]=v;SS('cfg',cfg);try{await sbUpsertConfig(cfg);}catch(e){console.error('saveConfig error',e);alert('Config sync failed.');}applyCfg();renderDash();renderSav();};
+async function saveName(){await scfg('name',document.getElementById('set-name').value||'Eli')}
+async function saveTitle(){await scfg('title',document.getElementById('set-title').value||'Summer OS')}
+async function saveRate(){const v=parseFloat(document.getElementById('set-rate').value);if(!isNaN(v)&&v>0)await scfg('rate',v);}
+async function saveGoal(){const v=parseFloat(document.getElementById('set-goal').value);if(!isNaN(v))await scfg('goal',v);}
+async function saveStart(){const v=parseFloat(document.getElementById('set-start').value);if(!isNaN(v))await scfg('start',v);}
+async function saveDeadline(){const v=document.getElementById('set-dl').value;if(v)await scfg('deadline',v);}
 function saveMead(){const v=parseInt(document.getElementById('set-mead').value);if(!isNaN(v)&&v>=0){meadFree=v;SS('mead_free',meadFree);renderGolf();renderDash();}}
 function exportData(){
   const d={cfg,savLog,gymLog,gymEx,golfLog,clubs,habitLog,habits,tenLog,schedActs,meadFree};
@@ -836,19 +946,24 @@ function renderDash(){
 }
 
 // ── SAVINGS ──
-function logSav(){
+async function logSav(){
   const date=document.getElementById('sv-date').value;
   const type=document.getElementById('sv-type').value;
   const amt=parseFloat(document.getElementById('sv-amt').value);
   const note=document.getElementById('sv-note').value;
   if(!date||isNaN(amt)||amt<=0)return;
+  console.log('logSav', {date,type,amt,note});
   savLog.push({date,type,amount:amt,note,id:Date.now()});
-  SS('sav_log',savLog);sbUpsert('ec_savings',savLog.map(r=>({id:r.id,date:r.date,type:r.type,amount:r.amount,note:r.note||''})));
-  document.getElementById('sv-amt').value='';
-  document.getElementById('sv-note').value='';
-  renderSav();
+  SS('sav_log',savLog);
+  try{
+    await sbUpsert('ec_savings',savLog.map(r=>({id:r.id,date:r.date,type:r.type,amount:r.amount,note:r.note||''})));
+    document.getElementById('sv-amt').value='';
+    document.getElementById('sv-note').value='';
+    renderSav();
+  }catch(e){console.error('logSav error',e);alert('Savings sync failed.');}
 }
-function delSav(id){savLog=savLog.filter(e=>e.id!==id);SS('sav_log',savLog);sbDelete('ec_savings',id);renderSav();}
+async function delSav(id){savLog=savLog.filter(e=>e.id!==id);SS('sav_log',savLog);
+  try{await sbDelete('ec_savings',id);renderSav();}catch(e){alert('Savings delete sync failed.');}}
 function renderSav(){
   const bal=currentBal();
   const rem=Math.max(0,cfg.goal-bal);
@@ -961,22 +1076,25 @@ function renderSessionSets(){
     </div>`).join('');
 }
 
-function saveSession(){
+async function saveSession(){
   if(!sessionSets.length){alert('Add at least one set before saving.');return;}
   const date=document.getElementById('g-date').value||today();
   const newEntries=sessionSets.map(s=>({id:Date.now()+Math.random(),date,ex:s.ex,wt:s.wt,reps:s.reps,sets:s.sets}));
+  console.log('saveSession', {date,newEntries});
   gymLog.push(...newEntries);
   SS('gym_log',gymLog);
-  sbUpsert('ec_gym',gymLog.map(r=>({id:r.id,date:r.date,ex:r.ex,wt:r.wt,reps:r.reps,sets:r.sets})));
-  sessionSets=[];
-  // clear chip selection
-  document.querySelectorAll('.wday-chip').forEach(c=>c.classList.remove('active'));
-  renderSessionSets();
-  renderGym();
-  renderDash();
+  try{
+    await sbUpsert('ec_gym',gymLog.map(r=>({id:r.id,date:r.date,ex:r.ex,wt:r.wt,reps:r.reps,sets:r.sets})));
+    sessionSets=[];
+    document.querySelectorAll('.wday-chip').forEach(c=>c.classList.remove('active'));
+    renderSessionSets();
+    renderGym();
+    renderDash();
+  }catch(e){console.error('saveSession error',e);alert('Workout sync failed.');}
 }
 
-function delGym(id){gymLog=gymLog.filter(e=>e.id!==id);SS('gym_log',gymLog);sbDelete('ec_gym',id);renderGym();renderDash();}
+async function delGym(id){gymLog=gymLog.filter(e=>e.id!==id);SS('gym_log',gymLog);
+  try{await sbDelete('ec_gym',id);renderGym();renderDash();}catch(e){alert('Workout delete sync failed.');}}
 
 function renderGym(){
   buildExSelect();
@@ -1131,19 +1249,24 @@ function saveClub(){
   if(!isNaN(v)&&v>0){clubs[selClub]=v;SS('clubs',clubs);}
   renderClubs();
 }
-function logGolf(){
+async function logGolf(){
   const date=document.getElementById('go-date').value;
   const course=document.getElementById('go-course').value;
   const holes=parseInt(document.getElementById('go-holes').value);
   const score=parseInt(document.getElementById('go-score').value);
   const par=parseInt(document.getElementById('go-par').value);
   if(!date||isNaN(score))return;
+  console.log('logGolf', {date,course,holes,score,par});
   if(course.includes('Meadowlark')&&meadFree>0){meadFree--;SS('mead_free',meadFree);}
-  golfLog.push({date,course,holes,score,par,id:Date.now()});SS('golf_log',golfLog);sbUpsert('ec_golf',golfLog.map(r=>({id:r.id,date:r.date,course:r.course,holes:r.holes,score:r.score,par:r.par})));
-  document.getElementById('go-score').value='';document.getElementById('go-par').value='';
-  renderGolf();
+  golfLog.push({date,course,holes,score,par,id:Date.now()});SS('golf_log',golfLog);
+  try{
+    await sbUpsert('ec_golf',golfLog.map(r=>({id:r.id,date:r.date,course:r.course,holes:r.holes,score:r.score,par:r.par})));
+    document.getElementById('go-score').value='';document.getElementById('go-par').value='';
+    renderGolf();
+  }catch(e){console.error('logGolf error',e);alert('Golf sync failed.');}
 }
-function delGolf(id){golfLog=golfLog.filter(e=>e.id!==id);SS('golf_log',golfLog);sbDelete('ec_golf',id);renderGolf();}
+async function delGolf(id){golfLog=golfLog.filter(e=>e.id!==id);SS('golf_log',golfLog);
+  try{await sbDelete('ec_golf',id);renderGolf();}catch(e){alert('Golf delete sync failed.');}}
 function renderGolf(){
   renderClubs();
   const r18=golfLog.filter(e=>e.holes===18);
@@ -1167,13 +1290,19 @@ function renderGolf(){
 }
 
 // ── HABITS ──
-function toggleH(id){
+async function toggleH(id){
   const k=today();if(!habitLog[k])habitLog[k]={};
-  habitLog[k][id]=!habitLog[k][id];SS('habit_log',habitLog);sbUpsertHabits(k,habitLog[k]);renderHabits();renderDash();
+  habitLog[k][id]=!habitLog[k][id];
+  console.log('toggleH', {date:k,id,checked:habitLog[k][id]});
+  SS('habit_log',habitLog);
+  try{await sbUpsertHabits(k,habitLog[k]);renderHabits();renderDash();}catch(e){console.error('toggleH error',e);alert('Habit sync failed.');}
 }
-function toggleHDate(id,k){
+async function toggleHDate(id,k){
   if(!habitLog[k])habitLog[k]={};
-  habitLog[k][id]=!habitLog[k][id];SS('habit_log',habitLog);sbUpsertHabits(k,habitLog[k]);renderHabits();
+  habitLog[k][id]=!habitLog[k][id];
+  console.log('toggleHDate', {date:k,id,checked:habitLog[k][id]});
+  SS('habit_log',habitLog);
+  try{await sbUpsertHabits(k,habitLog[k]);renderHabits();}catch(e){console.error('toggleHDate error',e);alert('Habit sync failed.');}
 }
 function addHabit(){
   const l=document.getElementById('h-new').value.trim();
@@ -1207,7 +1336,7 @@ function renderHabits(){
 }
 
 // ── TENNIS ──
-function logTennis(){
+async function logTennis(){
   const date=document.getElementById('t-date').value;
   const type=document.getElementById('t-type').value;
   const opp=document.getElementById('t-opp').value;
@@ -1215,11 +1344,16 @@ function logTennis(){
   const score=document.getElementById('t-score').value;
   const notes=document.getElementById('t-notes').value;
   if(!date)return;
-  tenLog.push({date,type,opp,result,score,notes,id:Date.now()});SS('ten_log',tenLog);sbUpsert('ec_tennis',tenLog.map(r=>({id:r.id,date:r.date,type:r.type,opp:r.opp||'',result:r.result||'',score:r.score||'',notes:r.notes||''})));
-  document.getElementById('t-opp').value='';document.getElementById('t-score').value='';document.getElementById('t-notes').value='';
-  renderTennis();
+  console.log('logTennis', {date,type,opp,result,score,notes});
+  tenLog.push({date,type,opp,result,score,notes,id:Date.now()});SS('ten_log',tenLog);
+  try{
+    await sbUpsert('ec_tennis',tenLog.map(r=>({id:r.id,date:r.date,type:r.type,opp:r.opp||'',result:r.result||'',score:r.score||'',notes:r.notes||''})));
+    document.getElementById('t-opp').value='';document.getElementById('t-score').value='';document.getElementById('t-notes').value='';
+    renderTennis();
+  }catch(e){console.error('logTennis error',e);alert('Tennis sync failed.');}
 }
-function delTen(id){tenLog=tenLog.filter(e=>e.id!==id);SS('ten_log',tenLog);sbDelete('ec_tennis',id);renderTennis();}
+async function delTen(id){tenLog=tenLog.filter(e=>e.id!==id);SS('ten_log',tenLog);
+  try{await sbDelete('ec_tennis',id);renderTennis();}catch(e){alert('Tennis delete sync failed.');}}
 function renderTennis(){
   const matches=tenLog.filter(e=>e.type==='match');
   const wins=matches.filter(e=>e.result==='W').length;
@@ -1308,7 +1442,7 @@ function selDay(di,el){
 function setAct(v){schedActs[curDay]=v;SS('sched_acts',schedActs);renderSched(curDay);}
 
 // ── INIT ──
-(function(){
+(async function(){
   const todayStr=today();
   ['sv-date','g-date','go-date','t-date'].forEach(id=>{
     const el=document.getElementById(id);
@@ -1321,6 +1455,12 @@ function setAct(v){schedActs[curDay]=v;SS('sched_acts',schedActs);renderSched(cu
   curDay=sd;
   const chips=document.querySelectorAll('.day-chip');
   chips.forEach((c,i)=>c.classList.toggle('active',i===sd));
+
+  try{
+    await sbLoadAll();
+  }catch(e){
+    console.error('Startup sync failed',e);
+  }
 
   applyCfg();
   renderDash();renderSched(sd);renderSav();renderGym();renderWorkout();renderGolf();renderHabits();renderTennis();
