@@ -600,8 +600,8 @@ const handleLogin=async()=>{
   errEl.textContent='';
   if(!pw){errEl.textContent='Enter your password.';return;}
   try{
-    const body={grant_type:'password',email:LOGIN_EMAIL,password:pw};
-    const url=`${SB_URL}/auth/v1/token`;
+    const body={email:LOGIN_EMAIL,password:pw};
+    const url=`${SB_URL}/auth/v1/token?grant_type=password`;
     console.log('handleLogin request', {url,headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,'Content-Type':'application/json'},body, email:LOGIN_EMAIL});
     const resp=await fetch(url,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await resp.json().catch(()=>null);
