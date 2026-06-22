@@ -135,8 +135,8 @@ select option{background:var(--surface)}
 </style>
 </head>
 <body>
-  <div class="os-sb" aria-label="OS sidebar">
-    <button class="sb-toggle" type="button" aria-label="Toggle sidebar">≡</button>
+  <div class="os-sb" id="os-sb" aria-label="OS sidebar">
+    <button class="sb-toggle" type="button" aria-label="Toggle sidebar" onclick="document.getElementById('os-sb').classList.toggle('open')">≡</button>
     <div class="sb-div"></div>
     <a class="sb-item sb-cur-s" href="index.html"><span class="sb-dot dot-s"></span><span class="sb-label">Summer OS</span></a>
     <a class="sb-item sb-cur-g" href="gt.html"><span class="sb-dot dot-g"></span><span class="sb-label">GT OS</span></a>
