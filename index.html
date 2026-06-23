@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Summer OS</title>
+<title>EC OS</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Summer OS">
@@ -164,7 +164,7 @@ select option{background:var(--surface)}
     </div>
   </div>
 <header>
-  <div class="logo" id="app-logo">EC OS <span id="app-name-sub">/ Eli Crist</span></div>
+  <div class="logo" id="app-logo">Summer OS <span id="app-name-sub">/ Eli Crist</span></div>
   <div style="display:flex;align-items:center;gap:10px">
     <a class="header-meta" href="hub.html">← hub</a>
     <div class="header-meta" id="hdr-date"></div>
@@ -947,8 +947,7 @@ function showTab(id,btn){
 // ── SETTINGS ──
 function applyCfg(){
   document.getElementById('app-name-sub').textContent='/ '+cfg.name;
-  document.querySelector('.logo').firstChild.textContent='EC OS ';
-  document.title=cfg.title;
+  document.title='EC OS';
   document.getElementById('set-name').value=cfg.name;
   document.getElementById('set-rate').value=cfg.rate;
   document.getElementById('set-goal').value=cfg.goal;
@@ -1658,7 +1657,8 @@ function setAct(v){schedActs[curDay]=v;SS('sched_acts',schedActs);renderSched(cu
 .sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .15s;font-family:'DM Sans',sans-serif}
 .os-sb.open .sb-label{opacity:1}
 .sb-footer{margin-top:auto;display:flex;flex-direction:column;gap:6px;width:100%}
-.sb-action{border:none;background:none}
+.sb-action{border:none;background:none;width:34px;height:34px;color:var(--text)}
+.sb-action .sb-dot{width:20px;height:20px;font-size:20px;display:flex;align-items:center;justify-content:center}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
 .overlay.active{display:flex}
 .overlay-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:1.5rem;max-width:520px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,.35)}
