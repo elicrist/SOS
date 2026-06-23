@@ -93,18 +93,46 @@ textarea{resize:vertical;min-height:80px;font-family:'DM Mono',monospace}
 .sb-cur-s{color:#e07b4a!important;background:rgba(224,123,74,.08)!important}
 .sb-cur-g{color:#B3A369!important;background:rgba(179,163,105,.08)!important}
 .sb-cur-m{color:#9AAFBF!important;background:rgba(154,175,191,.08)!important}
+.sb-footer{margin-top:auto;display:flex;flex-direction:column;gap:6px;width:100%}
+.sb-action{border:none;background:none}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
+.overlay.active{display:flex}
+.overlay-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:1.5rem;max-width:520px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,.35)}
+.archive-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.archive-row:last-child{border-bottom:none}
 </style>
 </head>
 <body>
 <div class="os-sb" id="os-sb">
   <button class="sb-toggle" onclick="document.getElementById('os-sb').classList.toggle('open')">≡</button>
   <div class="sb-div"></div>
-  <a class="sb-item" href="index.html"><span class="sb-dot dot-s"></span><span class="sb-label">Summer OS</span></a>
-  <a class="sb-item" href="gt.html"><span class="sb-dot dot-g"></span><span class="sb-label">GT OS</span></a>
-  <a class="sb-item sb-cur-m" href="mission.html"><span class="sb-dot dot-m"></span><span class="sb-label">Mission OS</span></a>
+  <div id="sb-pages"></div>
+  <div class="sb-footer">
+    <button class="sb-item sb-action" type="button" id="sb-archive-btn" onclick="openArchiveOverlay()" aria-label="Archived pages"><span class="sb-dot">🕸</span><span class="sb-label">Archive</span></button>
+    <button class="sb-item sb-action" type="button" id="sb-new-btn" onclick="openPageBuilder()" aria-label="New page"><span class="sb-dot">+</span><span class="sb-label">New page</span></button>
+  </div>
+</div>
+<div id="archive-overlay" class="overlay" aria-hidden="true">
+  <div class="overlay-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="section-title" style="margin:0">Archived pages</div>
+      <button class="btn btn-sm" onclick="closeArchiveOverlay()">Close</button>
+    </div>
+    <div id="archive-list"></div>
+    <div class="empty" id="archive-empty">No archived pages.</div>
+  </div>
+</div>
+<div id="page-builder-overlay" class="overlay" aria-hidden="true">
+  <div class="overlay-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="section-title" style="margin:0">Page builder</div>
+      <button class="btn btn-sm" onclick="closePageBuilder()">Close</button>
+    </div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6">Phase 3 page builder coming soon.</div>
+  </div>
 </div>
 <header>
-  <div class="logo">Mission OS <span>/ Eli Crist</span></div>
+  <div class="logo">EC OS <span id="hdr-sub">/ Eli Crist</span></div>
   <div class="hdr-right">
     <div class="hdr-meta" id="hdr-date"></div>
     <a class="hub-link" href="hub.html">← hub</a>
@@ -340,9 +368,80 @@ textarea{resize:vertical;min-height:80px;font-family:'DM Mono',monospace}
 <script>
 const GS=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}};
 const SS=(k,v)=>{localStorage.setItem(k,JSON.stringify(v))};
+const SB_URL="https://bezcgrtihvmktxjkbfrl.supabase.co";
+const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlemNncnRpaHZta3R4amtiZnJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNzQ2OTQsImV4cCI6MjA5Njg1MDY5NH0.7BhpVFAsjW0fDDvk1r9RMITYtzoosLHqsX80AAQSqA8";
+const buildHeaders=(opts={})=>({
+  apikey:SB_KEY,
+  Authorization:`Bearer ${SB_KEY}`,
+  Accept:'application/json',
+  'Content-Type':'application/json',
+  ...opts,
+});
+const sbFetchJson=async(url)=>{
+  const resp=await fetch(url,{headers:buildHeaders()});
+  if(!resp.ok) throw new Error(`Fetch failed ${resp.status}`);
+  return resp.json();
+};
+const getCurrentPagePath=()=>window.location.pathname.split('/').pop();
+const pageMatchesCurrent=row=>{
+  if(row.page_kind==='static'){return String(row.url||'').split('/').pop()===getCurrentPagePath();}
+  return String(row.id)===String(new URLSearchParams(window.location.search).get('id'));
+};
+const renderPagesSidebar=async()=>{
+  const container=document.getElementById('sb-pages');
+  if(!container) return;
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?archived=eq.false&select=*&order=sort_order.asc`);
+    if(!rows.length){container.innerHTML='<div class="empty" style="padding:0 12px">No pages available.</div>';return;}
+    container.innerHTML=rows.map(r=>{
+      const href=r.page_kind==='static'?r.url:`page.html?id=${r.id}`;
+      const active=pageMatchesCurrent(r)?' active':'';
+      const dotStyle=r.dot_color?`style="background:${r.dot_color}"`:'';
+      return `<a class="sb-item${active}" href="${href}"><span class="sb-dot" ${dotStyle}></span><span class="sb-label">${r.name}</span></a>`;
+    }).join('');
+  }catch(e){
+    console.error('renderPagesSidebar failed',e);
+    container.innerHTML='<div class="empty" style="padding:0 12px">Unable to load sidebar pages.</div>';
+  }
+};
+const openArchiveOverlay=()=>{const overlay=document.getElementById('archive-overlay');if(!overlay)return;overlay.classList.add('active');overlay.setAttribute('aria-hidden','false');loadArchivedPages();};
+const closeArchiveOverlay=()=>{const overlay=document.getElementById('archive-overlay');if(!overlay)return;overlay.classList.remove('active');overlay.setAttribute('aria-hidden','true');};
+const openPageBuilder=()=>{const overlay=document.getElementById('page-builder-overlay');if(!overlay)return;overlay.classList.add('active');overlay.setAttribute('aria-hidden','false');};
+const closePageBuilder=()=>{const overlay=document.getElementById('page-builder-overlay');if(!overlay)return;overlay.classList.remove('active');overlay.setAttribute('aria-hidden','true');};
+const loadArchivedPages=async()=>{
+  const listEl=document.getElementById('archive-list');
+  const emptyEl=document.getElementById('archive-empty');
+  if(!listEl||!emptyEl) return;
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?archived=eq.true&select=*&order=archived_at.desc`);
+    if(!rows.length){listEl.innerHTML='';emptyEl.style.display='block';return;}
+    emptyEl.style.display='none';
+    listEl.innerHTML=rows.map(r=>`
+      <div class="archive-row">
+        <div>
+          <div style="font-weight:600;color:var(--text)">${r.name}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">${r.page_kind==='static'?r.url:`page.html?id=${r.id}`}</div>
+        </div>
+        <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
+      </div>
+    `).join('');
+  }catch(e){
+    console.error('loadArchivedPages failed',e);
+    listEl.innerHTML='<div class="empty">Unable to load archived pages.</div>';
+    emptyEl.style.display='none';
+  }
+};
+const unarchivePage=async(id)=>{try{const url=`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`;const resp=await fetch(url,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:false,archived_at:null})});if(!resp.ok) throw new Error(`Patch failed ${resp.status}`);await renderPagesSidebar();await loadArchivedPages();}catch(e){console.error('unarchivePage failed',e);alert('Unarchive failed.');}};
+let cfg=GS('cfg',{name:'Eli Crist'});
+const loadHeaderName=async()=>{
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_config?key=eq.name&select=value`);
+    if(rows.length){cfg.name=rows[0].value;SS('cfg',cfg);}
+  }catch(e){console.error('loadHeaderName failed',e);}
+};
 
 // State
-let cfg=GS('lds_cfg',{date:'',lang:'',goal:12000});
+let mCfg=GS('lds_cfg',{date:'',lang:'',goal:12000});
 let prepItems=GS('lds_prep',null);
 let langLog=GS('lds_lang',[]);
 let habits=GS('lds_habits',null);
@@ -393,24 +492,24 @@ function weekDates(){
 
 // Config
 function saveCfg(){
-  cfg.date=document.getElementById('cfg-date').value;
-  cfg.lang=document.getElementById('cfg-lang').value;
-  cfg.goal=parseFloat(document.getElementById('cfg-goal').value)||12000;
-  SS('lds_cfg',cfg);
+  mCfg.date=document.getElementById('cfg-date').value;
+  mCfg.lang=document.getElementById('cfg-lang').value;
+  mCfg.goal=parseFloat(document.getElementById('cfg-goal').value)||12000;
+  SS('lds_cfg',mCfg);
   // Shared key for hub countdown
-  if(cfg.date)localStorage.setItem('lds_mission_date',cfg.date);
+  if(mCfg.date)localStorage.setItem('lds_mission_date',mCfg.date);
   renderAll();
 }
 
 // Dashboard
 function renderDash(){
   const now=new Date();now.setHours(0,0,0,0);
-  if(cfg.date){
-    const ms=new Date(cfg.date);
+  if(mCfg.date){
+    const ms=new Date(mCfg.date);
     const d=Math.ceil((ms-now)/86400000);
     document.getElementById('d-countdown').textContent=d>0?d:'Set Apart!';
     document.getElementById('d-countdown').style.color='var(--accent)';
-    document.getElementById('d-countdown-sub').textContent=cfg.date;
+    document.getElementById('d-countdown-sub').textContent=mCfg.date;
   }
   // Prep %
   const done=prepItems.filter(p=>p.done).length;
@@ -422,11 +521,11 @@ function renderDash(){
   // Fund
   const bal=calcFundBal();
   document.getElementById('d-fund').textContent='$'+bal.toFixed(0);
-  document.getElementById('d-fund-sub').textContent='of $'+cfg.goal.toFixed(0)+' goal';
-  const fpct=cfg.goal?Math.min(100,(bal/cfg.goal)*100):0;
+  document.getElementById('d-fund-sub').textContent='of $'+mCfg.goal.toFixed(0)+' goal';
+  const fpct=mCfg.goal?Math.min(100,(bal/mCfg.goal)*100):0;
   document.getElementById('d-fund-pct').textContent=Math.round(fpct)+'%';
   document.getElementById('d-fund-bar').style.width=fpct+'%';
-  document.getElementById('d-fund-goal-label').textContent='$'+cfg.goal.toFixed(0);
+  document.getElementById('d-fund-goal-label').textContent='$'+mCfg.goal.toFixed(0);
   // Today habits
   const k=todayStr();const th=habitLog[k]||{};
   document.getElementById('d-habits').innerHTML=habits.map(h=>`
@@ -499,7 +598,7 @@ function renderLang(){
   document.getElementById('lang-total-min').textContent=total;
   document.getElementById('lang-streak').textContent=streak;
   document.getElementById('lang-sessions').textContent=langLog.length;
-  document.getElementById('lang-label').textContent='language: '+(cfg.lang||'not set');
+  document.getElementById('lang-label').textContent='language: '+(mCfg.lang||'not set');
   const sorted=[...langLog].sort((a,b)=>b.id-a.id);
   const empty=document.getElementById('lang-empty');
   const body=document.getElementById('lang-body');
@@ -582,7 +681,7 @@ function logFund(){
 function delFund(id){fundLog=fundLog.filter(e=>e.id!==id);SS('lds_fund',fundLog);renderFund();}
 function renderFund(){
   const bal=calcFundBal();
-  const goal=cfg.goal||12000;
+  const goal=mCfg.goal||12000;
   const pct=goal?Math.min(100,(bal/goal)*100):0;
   const rem=Math.max(0,goal-bal);
   document.getElementById('f-bal').textContent='$'+bal.toFixed(0);
@@ -594,8 +693,8 @@ function renderFund(){
   document.getElementById('f-bar-goal').textContent='$'+goal.toFixed(0);
   // Days stat
   const now=new Date();now.setHours(0,0,0,0);
-  if(cfg.date&&rem>0){
-    const ms=new Date(cfg.date);
+  if(mCfg.date&&rem>0){
+    const ms=new Date(mCfg.date);
     const dLeft=Math.ceil((ms-now)/86400000);
     document.getElementById('f-days').textContent=dLeft>0?dLeft:'—';
     document.getElementById('f-rate-sub').textContent=dLeft>0?'$'+(rem/dLeft*30).toFixed(0)+'/mo needed':'—';
@@ -646,16 +745,19 @@ function renderNotes(){
 function renderAll(){renderDash();renderPrep();renderLang();renderHabits();renderFund();renderNotes();}
 
 // Init
-(function(){
+(async function(){
   const t=todayStr();
   ['lang-date','fund-date'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=t;});
   const now=new Date();
   document.getElementById('hdr-date').textContent=now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+  await loadHeaderName();
+  document.getElementById('hdr-sub').textContent='/ '+(cfg.name||'Eli Crist');
   // Load config into form
-  if(cfg.date)document.getElementById('cfg-date').value=cfg.date;
-  document.getElementById('cfg-lang').value=cfg.lang||'';
-  document.getElementById('cfg-goal').value=cfg.goal||12000;
+  if(mCfg.date)document.getElementById('cfg-date').value=mCfg.date;
+  document.getElementById('cfg-lang').value=mCfg.lang||'';
+  document.getElementById('cfg-goal').value=mCfg.goal||12000;
   renderAll();
+  renderPagesSidebar();
 })();
 </script>
 </body>

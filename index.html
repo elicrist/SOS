@@ -138,12 +138,33 @@ select option{background:var(--surface)}
   <div class="os-sb" id="os-sb" aria-label="OS sidebar">
     <button class="sb-toggle" type="button" aria-label="Toggle sidebar" onclick="document.getElementById('os-sb').classList.toggle('open')">≡</button>
     <div class="sb-div"></div>
-    <a class="sb-item sb-cur-s" href="index.html"><span class="sb-dot dot-s"></span><span class="sb-label">Summer OS</span></a>
-    <a class="sb-item sb-cur-g" href="gt.html"><span class="sb-dot dot-g"></span><span class="sb-label">GT OS</span></a>
-    <a class="sb-item sb-cur-m" href="mission.html"><span class="sb-dot dot-m"></span><span class="sb-label">Mission OS</span></a>
+    <div id="sb-pages"></div>
+    <div class="sb-footer">
+      <button class="sb-item sb-action" type="button" id="sb-archive-btn" onclick="openArchiveOverlay()" aria-label="Archived pages"><span class="sb-dot">🕸</span><span class="sb-label">Archive</span></button>
+      <button class="sb-item sb-action" type="button" id="sb-new-btn" onclick="openPageBuilder()" aria-label="New page"><span class="sb-dot">+</span><span class="sb-label">New page</span></button>
+    </div>
+  </div>
+  <div id="archive-overlay" class="overlay" aria-hidden="true">
+    <div class="overlay-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div class="section-title" style="margin:0">Archived pages</div>
+        <button class="btn btn-sm" onclick="closeArchiveOverlay()">Close</button>
+      </div>
+      <div id="archive-list"></div>
+      <div class="empty" id="archive-empty">No archived pages.</div>
+    </div>
+  </div>
+  <div id="page-builder-overlay" class="overlay" aria-hidden="true">
+    <div class="overlay-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div class="section-title" style="margin:0">Page builder</div>
+        <button class="btn btn-sm" onclick="closePageBuilder()">Close</button>
+      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">Phase 3 page builder coming soon.</div>
+    </div>
   </div>
 <header>
-  <div class="logo" id="app-logo">Summer OS <span id="app-name-sub">/ Eli</span></div>
+  <div class="logo" id="app-logo">EC OS <span id="app-name-sub">/ Eli Crist</span></div>
   <div style="display:flex;align-items:center;gap:10px">
     <a class="header-meta" href="hub.html">← hub</a>
     <div class="header-meta" id="hdr-date"></div>
@@ -479,7 +500,6 @@ select option{background:var(--surface)}
     <div class="card">
       <div class="section-title">identity & goals</div>
       <div class="set-row"><div><div class="set-label">Your name</div><div class="set-sub">shown in header</div></div><div style="display:flex;gap:6px"><input type="text" id="set-name" style="width:110px" placeholder="Eli"><button class="btn btn-sm" onclick="saveName()">Save</button></div></div>
-      <div class="set-row"><div><div class="set-label">App title</div><div class="set-sub">top left text</div></div><div style="display:flex;gap:6px"><input type="text" id="set-title" style="width:110px" placeholder="Summer OS"><button class="btn btn-sm" onclick="saveTitle()">Save</button></div></div>
       <div class="set-row"><div><div class="set-label">Hourly rate ($)</div><div class="set-sub">used in savings math</div></div><div style="display:flex;gap:6px"><input type="number" id="set-rate" style="width:70px" placeholder="17"><button class="btn btn-sm" onclick="saveRate()">Save</button></div></div>
       <div class="set-row"><div><div class="set-label">Savings goal ($)</div></div><div style="display:flex;gap:6px"><input type="number" id="set-goal" style="width:100px" placeholder="13115"><button class="btn btn-sm" onclick="saveGoal()">Save</button></div></div>
       <div class="set-row"><div><div class="set-label">Starting balance ($)</div><div class="set-sub">day 1 amount</div></div><div style="display:flex;gap:6px"><input type="number" id="set-start" style="width:100px" placeholder="8800"><button class="btn btn-sm" onclick="saveStart()">Save</button></div></div>
@@ -645,6 +665,73 @@ const sbFetchJson=async(url)=>{
   console.log('sbFetchJson success',url,data.length!==undefined?`${data.length} rows`:'ok');
   return data;
 };
+const getCurrentPageId=()=>new URLSearchParams(window.location.search).get('id');
+const getCurrentPagePath=()=>window.location.pathname.split('/').pop();
+const pageMatchesCurrent=row=>{
+  const currentId=getCurrentPageId();
+  if(currentId) return String(row.id)===String(currentId);
+  if(row.page_kind==='static'){
+    const page=String(row.url||'').split('/').pop();
+    return page===getCurrentPagePath();
+  }
+  return false;
+};
+const renderPagesSidebar=async()=>{
+  const container=document.getElementById('sb-pages');
+  if(!container) return;
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?archived=eq.false&select=*&order=sort_order.asc`);
+    if(!rows.length){container.innerHTML='<div class="empty" style="padding:0 12px">No pages available.</div>';return;}
+    container.innerHTML=rows.map(r=>{
+      const href=r.page_kind==='static'?r.url:`page.html?id=${r.id}`;
+      const active=pageMatchesCurrent(r)?' active':'';
+      const dotStyle=r.dot_color?`style="background:${r.dot_color}"`:'';
+      return `<a class="sb-item${active}" href="${href}"><span class="sb-dot" ${dotStyle}></span><span class="sb-label">${r.name}</span></a>`;
+    }).join('');
+  }catch(e){
+    console.error('renderPagesSidebar failed',e);
+    container.innerHTML='<div class="empty" style="padding:0 12px">Unable to load sidebar pages.</div>';
+  }
+};
+const openArchiveOverlay=()=>{const overlay=document.getElementById('archive-overlay');if(!overlay)return;overlay.classList.add('active');overlay.setAttribute('aria-hidden','false');loadArchivedPages();};
+const closeArchiveOverlay=()=>{const overlay=document.getElementById('archive-overlay');if(!overlay)return;overlay.classList.remove('active');overlay.setAttribute('aria-hidden','true');};
+const openPageBuilder=()=>{const overlay=document.getElementById('page-builder-overlay');if(!overlay)return;overlay.classList.add('active');overlay.setAttribute('aria-hidden','false');};
+const closePageBuilder=()=>{const overlay=document.getElementById('page-builder-overlay');if(!overlay)return;overlay.classList.remove('active');overlay.setAttribute('aria-hidden','true');};
+const loadArchivedPages=async()=>{
+  const listEl=document.getElementById('archive-list');
+  const emptyEl=document.getElementById('archive-empty');
+  if(!listEl||!emptyEl) return;
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?archived=eq.true&select=*&order=archived_at.desc`);
+    if(!rows.length){listEl.innerHTML='';emptyEl.style.display='block';return;}
+    emptyEl.style.display='none';
+    listEl.innerHTML=rows.map(r=>`
+      <div class="archive-row">
+        <div>
+          <div style="font-weight:600;color:var(--text)">${r.name}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">${r.page_kind==='static'?r.url:`page.html?id=${r.id}`}</div>
+        </div>
+        <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
+      </div>
+    `).join('');
+  }catch(e){
+    console.error('loadArchivedPages failed',e);
+    listEl.innerHTML='<div class="empty">Unable to load archived pages.</div>';
+    emptyEl.style.display='none';
+  }
+};
+const unarchivePage=async(id)=>{
+  try{
+    const url=`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`;
+    const resp=await fetch(url,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:false,archived_at:null})});
+    if(!resp.ok) throw new Error(`Patch failed ${resp.status}`);
+    await renderPagesSidebar();
+    await loadArchivedPages();
+  }catch(e){
+    console.error('unarchivePage failed',e);
+    alert('Unarchive failed.');
+  }
+};
 const sbUpsert=async(table,rows)=>{
   if(!rows||!rows.length){console.log('sbUpsert skipped empty rows',table);return;}
   console.log('sbUpsert start',table,rows.length,rows);
@@ -741,7 +828,7 @@ const sbLoadAll=async()=>{
 };
 
 // ── STATE ──
-let cfg=LS('cfg',{name:'Eli',title:'Summer OS',rate:17,goal:13115.80,start:8800.15,deadline:'2026-08-01'});
+let cfg=LS('cfg',{name:'Eli Crist',title:'Summer OS',rate:17,goal:13115.80,start:8800.15,deadline:'2026-08-01'});
 let savLog=LS('sav_log',[]);
 let gymLog=LS('gym_log',[]);
 let gymEx=LS('gym_ex',['Bench Press','Squat','Deadlift','Pull-up','Dip','Overhead Press (DB)','DB Row','DB Incline Press','Lateral Raise','Bicep Curl','Tricep Dip','KB Swing','Box Jump','Romanian Deadlift','Bulgarian Split Squat','Face Pull (Band)','Band Pull-Apart','Box Step-Up','Goblet Squat','Ring Face Pull','Pull-up Negative','KB Swing','Dead Hang','Fan Rower','Plank','Jump Rope']);
@@ -915,10 +1002,9 @@ function showTab(id,btn){
 // ── SETTINGS ──
 function applyCfg(){
   document.getElementById('app-name-sub').textContent='/ '+cfg.name;
-  document.querySelector('.logo').firstChild.textContent=cfg.title+' ';
+  document.querySelector('.logo').firstChild.textContent='EC OS ';
   document.title=cfg.title;
   document.getElementById('set-name').value=cfg.name;
-  document.getElementById('set-title').value=cfg.title;
   document.getElementById('set-rate').value=cfg.rate;
   document.getElementById('set-goal').value=cfg.goal;
   document.getElementById('set-start').value=cfg.start;
@@ -1603,6 +1689,7 @@ function setAct(v){schedActs[curDay]=v;SS('sched_acts',schedActs);renderSched(cu
   }
 
   applyCfg();
+  await renderPagesSidebar();
   renderDash();renderSched(sd);renderSav();renderGym();renderWorkout();renderGolf();renderHabits();renderTennis();
 })();
 </script>
@@ -1616,10 +1703,18 @@ function setAct(v){schedActs[curDay]=v;SS('sched_acts',schedActs);renderSched(cu
 .sb-item{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--muted);padding:8px;border-radius:8px;transition:all .15s;width:36px;overflow:hidden;white-space:nowrap}
 .os-sb.open .sb-item{width:148px;padding:9px 10px}
 .sb-item:hover{background:var(--faint);color:var(--text)}
+.sb-item.active{color:var(--text);background:rgba(255,255,255,.05)}
 .sb-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .dot-s{background:#e07b4a}.dot-g{background:#B3A369}.dot-m{background:#9AAFBF}
 .sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .15s;font-family:'DM Sans',sans-serif}
 .os-sb.open .sb-label{opacity:1}
+.sb-footer{margin-top:auto;display:flex;flex-direction:column;gap:6px;width:100%}
+.sb-action{border:none;background:none}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
+.overlay.active{display:flex}
+.overlay-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:1.5rem;max-width:520px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,.35)}
+.archive-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.archive-row:last-child{border-bottom:none}
 .sb-cur-s{color:#e07b4a!important;background:rgba(224,123,74,.08)!important}
 .sb-cur-g{color:#B3A369!important;background:rgba(179,163,105,.08)!important}
 .sb-cur-m{color:#9AAFBF!important;background:rgba(154,175,191,.08)!important}
