@@ -75,7 +75,7 @@ textarea{resize:vertical;min-height:80px;font-family:'DM Mono',monospace}
 .wcell.on{background:var(--ok);border-color:var(--ok)}
 .wlabel{font-size:10px;color:var(--muted);text-align:center;font-family:'DM Mono',monospace;margin-bottom:3px}
 .streak-badge{display:inline-flex;align-items:center;gap:5px;background:var(--accent-bg);border:1px solid var(--accent);border-radius:6px;padding:3px 9px;font-size:11px;font-family:'DM Mono',monospace;color:var(--accent)}
-@media(max-width:720px){.grid-2,.grid-4{grid-template-columns:1fr}.content{padding:1rem}header{padding:.9rem 1rem}}
+@media(max-width:720px){.grid-2,.grid-4{grid-template-columns:1fr}.content{padding:1rem}header{padding:.9rem 1rem;flex-wrap:wrap;row-gap:6px}.hdr-right{flex-wrap:wrap}}
 /* === OS SIDEBAR === */
 .os-sb{position:fixed;left:0;top:0;bottom:0;width:52px;background:var(--surface);border-right:1px solid var(--border);z-index:500;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;transition:width .2s ease;overflow:hidden}
 .os-sb.open{width:168px;align-items:flex-start;padding:14px 10px}
@@ -205,8 +205,8 @@ textarea{resize:vertical;min-height:80px;font-family:'DM Mono',monospace}
 <header>
   <div class="logo">Mission OS <span id="hdr-sub">/ Eli Crist</span></div>
   <div class="hdr-right">
-    <div class="hdr-meta" id="hdr-date"></div>
     <a class="hub-link" href="hub.html">← hub</a>
+    <div class="hdr-meta" id="hdr-date"></div>
   </div>
 </header>
 <div class="empty" id="auth-notice" style="display:none;text-align:left;padding:8px 1.5rem;border-bottom:1px solid var(--border)">Log in via Summer OS first to sync your name and pages.</div>

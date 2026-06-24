@@ -21,11 +21,10 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .logo{font-size:17px;font-weight:600;letter-spacing:-.4px}
 .logo span{color:var(--muted);font-weight:300}
-.hdr-right{display:flex;align-items:center;gap:14px}
+.hdr-right{display:flex;align-items:center;gap:12px}
 .hdr-meta{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
 .hub-link{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;text-decoration:none;transition:color .15s}
 .hub-link:hover{color:var(--text)}
-.page-caption{padding:0 2rem;margin-top:-2px;margin-bottom:.4rem;font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;flex-shrink:0}
 .content{flex:1;overflow-y:auto;padding:1.5rem 2rem}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}
@@ -68,7 +67,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .wcell.on{background:var(--ok);border-color:var(--ok)}
 .wlabel{font-size:10px;color:var(--muted);text-align:center;font-family:'DM Mono',monospace;margin-bottom:3px}
 .streak-badge{display:inline-flex;align-items:center;gap:5px;background:color-mix(in srgb,var(--accent) 14%,var(--card));border:1px solid var(--accent);border-radius:6px;padding:3px 9px;font-size:11px;font-family:'DM Mono',monospace;color:var(--accent)}
-@media(max-width:720px){.grid-2,.grid-4{grid-template-columns:1fr}.widget-grid{grid-template-columns:1fr}.content{padding:1rem}header{padding:.9rem 1rem}.page-caption{padding:0 1rem}}
+@media(max-width:720px){.grid-2,.grid-4{grid-template-columns:1fr}.widget-grid{grid-template-columns:1fr}.content{padding:1rem}header{padding:.9rem 1rem;flex-wrap:wrap;row-gap:6px}.hdr-right{flex-wrap:wrap}}
 /* === OS SIDEBAR === */
 .os-sb{position:fixed;left:0;top:0;bottom:0;width:52px;background:var(--surface);border-right:1px solid var(--border);z-index:500;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;transition:width .2s ease;overflow:hidden}
 .os-sb.open{width:168px;align-items:flex-start;padding:14px 10px}
@@ -195,13 +194,12 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 <header>
   <div class="logo"><span id="hdr-page-name">Loading…</span> <span id="hdr-sub">/ Eli Crist</span></div>
   <div class="hdr-right">
+    <a class="hub-link" href="hub.html">← hub</a>
     <div class="hdr-meta" id="hdr-date"></div>
     <a class="hub-link" href="#" id="hdr-archive-link" onclick="archiveThisPage();return false" style="display:none">Archive this page</a>
-    <a class="hub-link" href="hub.html">← hub</a>
   </div>
 </header>
 <div class="empty" id="auth-notice" style="display:none;text-align:left;padding:8px 1.5rem;border-bottom:1px solid var(--border)">Log in via Summer OS first to sync your name and pages.</div>
-<div class="page-caption" id="page-caption" style="display:none"></div>
 <div class="content">
 <div class="empty" id="page-error" style="display:none">
   This page is archived or doesn't exist.<br><br>
@@ -426,6 +424,7 @@ let pageId=null;
 let pageRow=null;
 let pageWidgets=[];
 let widgetDataMap={};
+let hdrDateBase='';
 
 function todayStr(){return new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'});}
 function weekDates(){
@@ -814,7 +813,7 @@ const loadWidgets=async()=>{
 const showPageError=()=>{
   document.getElementById('hdr-page-name').textContent='Page not found';
   document.getElementById('hdr-archive-link').style.display='none';
-  document.getElementById('page-caption').style.display='none';
+  document.getElementById('hdr-date').textContent=hdrDateBase;
   document.getElementById('page-error').style.display='block';
   document.getElementById('page-widgets').style.display='none';
 };
@@ -824,9 +823,7 @@ const showPageContent=()=>{
   document.getElementById('hdr-archive-link').style.display='inline';
   if(pageRow.dot_color) document.documentElement.style.setProperty('--accent',pageRow.dot_color);
   const captionParts=[pageRow.timeframe,pageRow.location].filter(Boolean);
-  const captionEl=document.getElementById('page-caption');
-  if(captionParts.length){captionEl.textContent=captionParts.join(' · ');captionEl.style.display='block';}
-  else captionEl.style.display='none';
+  document.getElementById('hdr-date').textContent=captionParts.length?`${hdrDateBase} · ${captionParts.join(' · ')}`:hdrDateBase;
   document.getElementById('page-error').style.display='none';
   document.getElementById('page-widgets').style.display='';
 };
@@ -863,7 +860,8 @@ const archiveThisPage=async()=>{
 // Init
 (async function(){
   const now=new Date();
-  document.getElementById('hdr-date').textContent=now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+  hdrDateBase=now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+  document.getElementById('hdr-date').textContent=hdrDateBase;
   const authed=await initAuth();
   if(authed){await loadHeaderName();}else{showAuthNotice();}
   document.getElementById('hdr-sub').textContent='/ '+(cfg.name||'Eli Crist');
