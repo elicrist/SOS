@@ -144,6 +144,10 @@ textarea{resize:vertical;min-height:80px;font-family:'DM Mono',monospace}
         <button class="btn btn-sm" id="set-signout-btn" onclick="signOut()" style="display:none">Sign out</button>
       </div>
     </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="section-title">this page</div>
+      <div class="set-row"><div><div class="set-label">Archive this page</div><div class="set-sub">Hides it from the sidebar — unarchive anytime</div></div><button class="btn btn-sm" onclick="archiveThisPage()">Archive</button></div>
+    </div>
     <div style="margin-bottom:1rem">
       <div class="section-title">install as app</div>
       <div style="font-size:12px;color:var(--muted);line-height:1.8">
@@ -639,6 +643,7 @@ const loadArchivedPages=async()=>{
   }
 };
 const unarchivePage=async(id)=>{try{const url=`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`;const resp=await fetch(url,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:false,archived_at:null})});if(!resp.ok) throw new Error(`Patch failed ${resp.status}`);await renderPagesSidebar();await loadArchivedPages();}catch(e){console.error('unarchivePage failed',e);alert('Unarchive failed.');}};
+const archiveThisPage=async()=>{try{const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?page_kind=eq.static&select=*`);const row=rows.find(r=>String(r.url||'').split('/').pop()===getCurrentPagePath());if(!row){alert("Could not find this page's row.");return;}if(!confirm(`Archive "${row.name}"? You can unarchive it later from the Archive panel.`))return;const resp=await fetch(`${SB_URL}/rest/v1/ec_pages?id=eq.${row.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:true,archived_at:new Date().toISOString()})});if(!resp.ok) throw new Error(`Archive failed ${resp.status}`);window.location.href='hub.html';}catch(e){console.error('archiveThisPage failed',e);alert('Archive failed.');}};
 let cfg=GS('cfg',{name:'Eli Crist'});
 const showAuthNotice=()=>{const el=document.getElementById('auth-notice');if(el)el.style.display='block';};
 const loadHeaderName=async()=>{

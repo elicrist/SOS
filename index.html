@@ -174,6 +174,10 @@ select option{background:var(--surface)}
         </div>
       </div>
       <div class="card" style="margin-bottom:1rem">
+        <div class="section-title">this page</div>
+        <div class="set-row"><div><div class="set-label">Archive this page</div><div class="set-sub">Hides it from the sidebar — unarchive anytime</div></div><button class="btn btn-sm" onclick="archiveThisPage()">Archive</button></div>
+      </div>
+      <div class="card" style="margin-bottom:1rem">
         <div class="section-title">identity & data</div>
         <div class="set-row"><div><div class="set-label">Your name</div><div class="set-sub">shown in header</div></div><div style="display:flex;gap:6px"><input type="text" id="set-name" style="width:110px" placeholder="Eli"><button class="btn btn-sm" onclick="saveName()">Save</button></div></div>
         <div class="set-row"><div><div class="set-label">Export backup</div><div class="set-sub">saves JSON file</div></div><button class="btn btn-sm" onclick="exportData()">Export</button></div>
@@ -873,6 +877,20 @@ const unarchivePage=async(id)=>{
   }catch(e){
     console.error('unarchivePage failed',e);
     alert('Unarchive failed.');
+  }
+};
+const archiveThisPage=async()=>{
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?page_kind=eq.static&select=*`);
+    const row=rows.find(r=>String(r.url||'').split('/').pop()===getCurrentPagePath());
+    if(!row){alert("Could not find this page's row.");return;}
+    if(!confirm(`Archive "${row.name}"? You can unarchive it later from the Archive panel.`))return;
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_pages?id=eq.${row.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:true,archived_at:new Date().toISOString()})});
+    if(!resp.ok) throw new Error(`Archive failed ${resp.status}`);
+    window.location.href='hub.html';
+  }catch(e){
+    console.error('archiveThisPage failed',e);
+    alert('Archive failed.');
   }
 };
 const sbUpsert=async(table,rows)=>{
