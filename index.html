@@ -858,7 +858,10 @@ const loadArchivedPages=async()=>{
           <span class="sb-dot" style="background:${r.dot_color||'var(--muted)'}"></span>
           <div style="font-weight:600;color:var(--text)">${r.name}</div>
         </div>
-        <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
+          <button class="btn btn-sm btn-danger" onclick="deletePagePermanently(${r.id})">Delete Permanently</button>
+        </div>
       </div>
     `).join('');
   }catch(e){
@@ -877,6 +880,19 @@ const unarchivePage=async(id)=>{
   }catch(e){
     console.error('unarchivePage failed',e);
     alert('Unarchive failed.');
+  }
+};
+const deletePagePermanently=async(id)=>{
+  try{
+    const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?id=eq.${id}&select=name`);
+    const name=rows[0]?.name||'this page';
+    if(!confirm(`Permanently delete "${name}"? This cannot be undone.`))return;
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`,{method:'DELETE',headers:buildHeaders()});
+    if(!resp.ok) throw new Error(`Delete failed ${resp.status}`);
+    await loadArchivedPages();
+  }catch(e){
+    console.error('deletePagePermanently failed',e);
+    alert('Delete failed.');
   }
 };
 const archiveThisPage=async()=>{

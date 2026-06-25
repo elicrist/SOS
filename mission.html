@@ -54,6 +54,7 @@ textarea{resize:vertical;min-height:80px;font-family:'DM Mono',monospace}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn-primary{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
 .btn-sm{padding:4px 10px;font-size:11px}
+.btn-danger{border-color:var(--danger);color:var(--danger)}
 .log-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:.5rem}
 .log-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:5px 7px;border-bottom:1px solid var(--border);font-weight:500}
 .log-table td{padding:7px 7px;border-bottom:1px solid var(--faint);color:var(--text);font-family:'DM Mono',monospace;font-size:11px;vertical-align:middle}
@@ -633,7 +634,10 @@ const loadArchivedPages=async()=>{
           <span class="sb-dot" style="background:${r.dot_color||'var(--muted)'}"></span>
           <div style="font-weight:600;color:var(--text)">${r.name}</div>
         </div>
-        <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
+          <button class="btn btn-sm btn-danger" onclick="deletePagePermanently(${r.id})">Delete Permanently</button>
+        </div>
       </div>
     `).join('');
   }catch(e){
@@ -643,6 +647,7 @@ const loadArchivedPages=async()=>{
   }
 };
 const unarchivePage=async(id)=>{try{const url=`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`;const resp=await fetch(url,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:false,archived_at:null})});if(!resp.ok) throw new Error(`Patch failed ${resp.status}`);await renderPagesSidebar();await loadArchivedPages();}catch(e){console.error('unarchivePage failed',e);alert('Unarchive failed.');}};
+const deletePagePermanently=async(id)=>{try{const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?id=eq.${id}&select=name`);const name=rows[0]?.name||'this page';if(!confirm(`Permanently delete "${name}"? This cannot be undone.`))return;const resp=await fetch(`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`,{method:'DELETE',headers:buildHeaders()});if(!resp.ok) throw new Error(`Delete failed ${resp.status}`);await loadArchivedPages();}catch(e){console.error('deletePagePermanently failed',e);alert('Delete failed.');}};
 const archiveThisPage=async()=>{try{const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?page_kind=eq.static&select=*`);const row=rows.find(r=>String(r.url||'').split('/').pop()===getCurrentPagePath());if(!row){alert("Could not find this page's row.");return;}if(!confirm(`Archive "${row.name}"? You can unarchive it later from the Archive panel.`))return;const resp=await fetch(`${SB_URL}/rest/v1/ec_pages?id=eq.${row.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:true,archived_at:new Date().toISOString()})});if(!resp.ok) throw new Error(`Archive failed ${resp.status}`);window.location.href='hub.html';}catch(e){console.error('archiveThisPage failed',e);alert('Archive failed.');}};
 let cfg=GS('cfg',{name:'Eli Crist'});
 const showAuthNotice=()=>{const el=document.getElementById('auth-notice');if(el)el.style.display='block';};
