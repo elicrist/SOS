@@ -29,6 +29,16 @@ header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);display:flex;al
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}
 .widget-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start}
+.tab-bar{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab-btn{padding:10px 18px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;font-family:'DM Sans',sans-serif}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab-btn.dragging{opacity:.4}
+.tab-add-btn{padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;flex-shrink:0}
+.tab-add-btn:hover{color:var(--accent)}
+.widget-add-card{border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:140px;cursor:pointer;color:var(--muted);font-size:28px;transition:all .15s}
+.widget-add-card:hover{color:var(--accent);border-color:var(--accent)}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.25rem}
 .section-title{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:500;margin-bottom:.9rem}
 .stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem}
@@ -207,14 +217,25 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
     <button class="btn btn-primary" style="width:100%" onclick="saveWidgetSettings()">Save</button>
   </div>
 </div>
+<div id="mini-widget-picker-overlay" class="overlay" aria-hidden="true">
+  <div class="overlay-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="section-title" style="margin:0">Add widget to tab</div>
+      <button class="btn btn-sm" onclick="closeMiniWidgetPicker()">Close</button>
+    </div>
+    <div id="mwp-widget-types"></div>
+  </div>
+</div>
 <header>
   <div class="logo"><span id="hdr-page-name">Loading…</span> <span id="hdr-sub">/ Eli Crist</span></div>
   <div class="hdr-right">
     <a class="hub-link" href="hub.html">← hub</a>
     <div class="hdr-meta" id="hdr-date"></div>
+    <a class="hub-link" href="#" id="hdr-add-tab-link" onclick="addTab();return false" style="display:none">+ Add tab</a>
     <a class="hub-link" href="#" id="hdr-archive-link" onclick="archiveThisPage();return false" style="display:none">Archive this page</a>
   </div>
 </header>
+<div class="tab-bar" id="page-tab-bar" style="display:none"></div>
 <div class="content">
 <div class="empty" id="page-error" style="display:none">
   This page doesn't exist.<br><br>
@@ -450,6 +471,9 @@ let pageRow=null;
 let pageWidgets=[];
 let widgetDataMap={};
 let hdrDateBase='';
+let pageTabs=[];
+let activeTabId=null;
+let dragTabId=null;
 
 function todayStr(){return new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'});}
 function weekDates(){
@@ -856,19 +880,135 @@ const WIDGET_RENDERERS={
 
 const renderWidgets=()=>{
   const wrap=document.getElementById('page-widgets');
-  wrap.innerHTML=pageWidgets.map(w=>`
+  const tabbed=pageTabs.length>0;
+  const widgetsToShow=tabbed?pageWidgets.filter(w=>String(w.tab_id)===String(activeTabId)):pageWidgets;
+  let html=widgetsToShow.map(w=>`
     <div class="card" id="widget-card-${w.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
         <div class="section-title" id="widget-title-${w.id}" style="margin:0">${w.title||w.widget_type}</div>
-        <button class="btn btn-sm" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">Edit</button>
+        <button class="btn btn-sm" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">✎</button>
       </div>
       <div id="widget-body-${w.id}"></div>
     </div>`).join('');
-  pageWidgets.forEach(w=>{
+  if(tabbed){
+    if(!widgetsToShow.length) html+='<div class="empty">No widgets in this tab yet.</div>';
+    html+='<div class="card widget-add-card" onclick="openMiniWidgetPicker()" aria-label="Add widget to this tab">+</div>';
+  }
+  wrap.innerHTML=html;
+  widgetsToShow.forEach(w=>{
     const renderer=WIDGET_RENDERERS[w.widget_type];
     if(renderer) renderer(w);
     else document.getElementById(`widget-body-${w.id}`).innerHTML='<div class="empty">Unknown widget type.</div>';
   });
+};
+
+const renderTabBar=()=>{
+  const bar=document.getElementById('page-tab-bar');
+  const addLink=document.getElementById('hdr-add-tab-link');
+  if(!bar) return;
+  if(!pageTabs.length){
+    bar.style.display='none';bar.innerHTML='';
+    if(addLink) addLink.style.display='inline';
+    return;
+  }
+  if(addLink) addLink.style.display='none';
+  bar.style.display='flex';
+  const sorted=[...pageTabs].sort((a,b)=>a.sort_order-b.sort_order);
+  bar.innerHTML=sorted.map(t=>`
+    <button class="tab-btn${String(t.id)===String(activeTabId)?' active':''}" draggable="true"
+      ondragstart="onTabDragStart(event,${t.id})" ondragover="onTabDragOver(event)"
+      ondrop="onTabDrop(event,${t.id})" ondragend="onTabDragEnd(event)"
+      onclick="switchTab(${t.id})">${t.name}</button>`).join('')
+    +`<button class="tab-add-btn" onclick="addTab()" aria-label="Add tab" title="Add tab">+</button>`;
+};
+
+const switchTab=id=>{activeTabId=id;renderTabBar();renderWidgets();};
+
+const onTabDragStart=(e,id)=>{dragTabId=id;e.dataTransfer.effectAllowed='move';e.target.classList.add('dragging');};
+const onTabDragOver=e=>{e.preventDefault();};
+const onTabDragEnd=e=>{e.target.classList.remove('dragging');dragTabId=null;};
+const onTabDrop=async(e,targetId)=>{
+  e.preventDefault();
+  if(dragTabId==null||String(dragTabId)===String(targetId))return;
+  const sorted=[...pageTabs].sort((a,b)=>a.sort_order-b.sort_order);
+  const fromIdx=sorted.findIndex(t=>String(t.id)===String(dragTabId));
+  const toIdx=sorted.findIndex(t=>String(t.id)===String(targetId));
+  if(fromIdx<0||toIdx<0)return;
+  const [moved]=sorted.splice(fromIdx,1);
+  sorted.splice(toIdx,0,moved);
+  sorted.forEach((t,i)=>{t.sort_order=i;});
+  pageTabs=sorted;
+  renderTabBar();
+  try{
+    await Promise.all(sorted.map(t=>fetch(`${SB_URL}/rest/v1/ec_page_tabs?id=eq.${t.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({sort_order:t.sort_order})})));
+  }catch(e){
+    console.error('tab reorder persist failed',e);
+    alert('Reorder failed to save — try again.');
+  }
+};
+
+const addTab=async()=>{
+  const name=prompt('Tab name:','New Tab');
+  if(name===null)return;
+  const trimmed=name.trim()||'New Tab';
+  try{
+    if(pageTabs.length===0 && pageWidgets.some(w=>w.tab_id==null)){
+      const mainTabId=Date.now();
+      const resp=await fetch(`${SB_URL}/rest/v1/ec_page_tabs`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({id:mainTabId,page_id:pageId,name:'Main',sort_order:0})});
+      if(!resp.ok) throw new Error(`Main tab create failed ${resp.status}`);
+      const untabbed=pageWidgets.filter(w=>w.tab_id==null);
+      const untabbedIds=untabbed.map(w=>w.id);
+      const patchResp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets?id=in.(${untabbedIds.join(',')})`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({tab_id:mainTabId})});
+      if(!patchResp.ok) throw new Error(`Migration patch failed ${patchResp.status}`);
+      pageTabs.push({id:mainTabId,page_id:pageId,name:'Main',sort_order:0});
+      untabbed.forEach(w=>{w.tab_id=mainTabId;});
+      console.log(`MIGRATION: created "Main" tab (id=${mainTabId}) and reassigned ${untabbedIds.length} untabbed widget(s) to it.`);
+    }
+    const nextSort=pageTabs.length?Math.max(...pageTabs.map(t=>t.sort_order))+1:0;
+    const newTabId=Date.now()+1;
+    const resp2=await fetch(`${SB_URL}/rest/v1/ec_page_tabs`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({id:newTabId,page_id:pageId,name:trimmed,sort_order:nextSort})});
+    if(!resp2.ok) throw new Error(`Tab create failed ${resp2.status}`);
+    pageTabs.push({id:newTabId,page_id:pageId,name:trimmed,sort_order:nextSort});
+    activeTabId=newTabId;
+    renderTabBar();
+    renderWidgets();
+  }catch(e){
+    console.error('addTab failed',e);
+    alert('Failed to create tab.');
+  }
+};
+
+const renderMiniWidgetTypes=()=>{
+  const wrap=document.getElementById('mwp-widget-types');
+  if(!wrap)return;
+  wrap.innerHTML=WIDGET_TYPE_DEFS.map(w=>`
+    <div class="set-row">
+      <div><div class="set-label">${w.label}</div><div class="set-sub">${w.sub}</div></div>
+      <div class="hcheck" onclick="addWidgetToTab('${w.type}','${w.label}')"></div>
+    </div>`).join('');
+};
+const openMiniWidgetPicker=()=>{const o=document.getElementById('mini-widget-picker-overlay');if(!o)return;renderMiniWidgetTypes();o.classList.add('active');o.setAttribute('aria-hidden','false');};
+const closeMiniWidgetPicker=()=>{const o=document.getElementById('mini-widget-picker-overlay');if(!o)return;o.classList.remove('active');o.setAttribute('aria-hidden','true');};
+const addWidgetToTab=async(type,label)=>{
+  const title=prompt(`Title for this ${label} widget:`,label);
+  if(title===null)return;
+  const trimmed=title.trim();
+  if(!trimmed)return;
+  const config=pbDefaultConfig(type,trimmed);
+  const widgetId=Date.now();
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({id:widgetId,page_id:pageId,widget_type:type,title:trimmed,config,sort_order:pageWidgets.length,tab_id:activeTabId})});
+    if(!resp.ok) throw new Error(`Widget insert failed ${resp.status}`);
+    const dataResp=await fetch(`${SB_URL}/rest/v1/ec_widget_data`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({page_widget_id:widgetId,data:{}})});
+    if(!dataResp.ok) throw new Error(`Widget data insert failed ${dataResp.status}`);
+    pageWidgets.push({id:widgetId,page_id:pageId,widget_type:type,title:trimmed,config,sort_order:pageWidgets.length,tab_id:activeTabId});
+    widgetDataMap[widgetId]={page_widget_id:widgetId,data:{}};
+    closeMiniWidgetPicker();
+    renderWidgets();
+  }catch(e){
+    console.error('addWidgetToTab failed',e);
+    alert('Failed to add widget.');
+  }
 };
 
 const ensureWidgetData=async w=>{
@@ -889,13 +1029,20 @@ const ensureWidgetData=async w=>{
 
 const loadWidgets=async()=>{
   try{
-    pageWidgets=await sbFetchJson(`${SB_URL}/rest/v1/ec_page_widgets?page_id=eq.${pageId}&select=*&order=sort_order.asc`);
+    const [widgetRows,tabRows]=await Promise.all([
+      sbFetchJson(`${SB_URL}/rest/v1/ec_page_widgets?page_id=eq.${pageId}&select=*&order=sort_order.asc`),
+      sbFetchJson(`${SB_URL}/rest/v1/ec_page_tabs?page_id=eq.${pageId}&select=*&order=sort_order.asc`),
+    ]);
+    pageWidgets=widgetRows;
+    pageTabs=tabRows;
   }catch(e){
     console.error('loadWidgets failed',e);
     document.getElementById('page-widgets').innerHTML='<div class="empty">Unable to load widgets.</div>';
     return;
   }
+  if(pageTabs.length && activeTabId==null) activeTabId=pageTabs[0].id;
   await Promise.all(pageWidgets.map(ensureWidgetData));
+  renderTabBar();
   renderWidgets();
 };
 
