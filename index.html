@@ -630,6 +630,8 @@ const renderAuthStatus=()=>{
 };
 const signOut=()=>{
   setAuthSession(null);
+  cfg=DEFAULT_CFG();savLog=[];gymLog=[];golfLog=[];tenLog=[];habitLog={};notes=[];
+  SS('cfg',cfg);SS('sav_log',savLog);SS('gym_log',gymLog);SS('golf_log',golfLog);SS('ten_log',tenLog);SS('habit_log',habitLog);SS('ec_notes',notes);
   renderAuthStatus();
   setSyncNotSignedIn();
   setLoginVisible(true);
@@ -1008,16 +1010,15 @@ const sbLoadAll=async()=>{
       notesRows:notesRows.length,
     });
 
-    if(cfgRows.length){
-      cfgRows.forEach(r=>{if(r.key!==undefined)cfg[r.key]=r.value;});
-      SS('cfg',cfg);
-    }
-    if(savRows.length){savLog=savRows.map(r=>({id:r.id,date:r.date,type:r.type,amount:r.amount,note:r.note||''}));SS('sav_log',savLog);}
-    if(gymRows.length){gymLog=gymRows.map(r=>({id:r.id,date:r.date,ex:r.ex,wt:r.wt,reps:r.reps,sets:r.sets}));SS('gym_log',gymLog);}
-    if(golfRows.length){golfLog=golfRows.map(r=>({id:r.id,date:r.date,course:r.course,holes:r.holes,score:r.score,par:r.par}));SS('golf_log',golfLog);}
-    if(tenRows.length){tenLog=tenRows.map(r=>({id:r.id,date:r.date,type:r.type,opp:r.opp||'',result:r.result||'',score:r.score||'',notes:r.notes||''}));SS('ten_log',tenLog);}
-    if(habitRows.length){habitLog={};habitRows.forEach(r=>{habitLog[r.date]=r.data||{}});SS('habit_log',habitLog);}
-    if(notesRows.length){notes=notesRows.sort((a,b)=>b.id-a.id).map(r=>({id:r.id,date:r.date,title:r.title,body:r.body}));SS('ec_notes',notes);}
+    cfg=DEFAULT_CFG();
+    cfgRows.forEach(r=>{if(r.key!==undefined)cfg[r.key]=r.value;});
+    SS('cfg',cfg);
+    savLog=savRows.map(r=>({id:r.id,date:r.date,type:r.type,amount:r.amount,note:r.note||''}));SS('sav_log',savLog);
+    gymLog=gymRows.map(r=>({id:r.id,date:r.date,ex:r.ex,wt:r.wt,reps:r.reps,sets:r.sets}));SS('gym_log',gymLog);
+    golfLog=golfRows.map(r=>({id:r.id,date:r.date,course:r.course,holes:r.holes,score:r.score,par:r.par}));SS('golf_log',golfLog);
+    tenLog=tenRows.map(r=>({id:r.id,date:r.date,type:r.type,opp:r.opp||'',result:r.result||'',score:r.score||'',notes:r.notes||''}));SS('ten_log',tenLog);
+    habitLog={};habitRows.forEach(r=>{habitLog[r.date]=r.data||{}});SS('habit_log',habitLog);
+    notes=notesRows.sort((a,b)=>b.id-a.id).map(r=>({id:r.id,date:r.date,title:r.title,body:r.body}));SS('ec_notes',notes);
     console.log('sbLoadAll complete',{
       cfg,cfgRows,savLogLen:savLog.length,gymLogLen:gymLog.length,golfLogLen:golfLog.length,tenLogLen:tenLog.length,habitLogKeys:Object.keys(habitLog).length,notesLen:notes.length,
     });
@@ -1026,8 +1027,9 @@ const sbLoadAll=async()=>{
 };
 
 // ── STATE ──
+const DEFAULT_CFG=()=>({name:'',title:'',rate:0,goal:0,start:0,deadline:''});
 let myStaticPageRow=null;
-let cfg=LS('cfg',{name:'Eli Crist',title:'Summer OS',rate:17,goal:13115.80,start:8800.15,deadline:'2026-08-01'});
+let cfg=LS('cfg',DEFAULT_CFG());
 let savLog=LS('sav_log',[]);
 let gymLog=LS('gym_log',[]);
 let gymEx=LS('gym_ex',['Bench Press','Squat','Deadlift','Pull-up','Dip','Overhead Press (DB)','DB Row','DB Incline Press','Lateral Raise','Bicep Curl','Tricep Dip','KB Swing','Box Jump','Romanian Deadlift','Bulgarian Split Squat','Face Pull (Band)','Band Pull-Apart','Box Step-Up','Goblet Squat','Ring Face Pull','Pull-up Negative','KB Swing','Dead Hang','Fan Rower','Plank','Jump Rope']);
