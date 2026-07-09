@@ -110,6 +110,17 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .set-sub{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px}
 .pb-swatch{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
 .pb-swatch.sel{border-color:var(--text)}
+.widget-card-full{grid-column:1/-1}
+.sched-day-nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:.5rem}
+.sched-day-chip{padding:5px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;font-size:12px;color:var(--muted);text-align:center;transition:all .15s;font-family:'DM Mono',monospace}
+.sched-day-chip:hover{color:var(--text)}
+.sched-day-chip.active{background:var(--card);border-color:var(--accent);color:var(--text)}
+.sched-block-row{display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--faint)}
+.sched-block-row:last-child{border-bottom:none}
+.sched-block-time{width:58px;flex-shrink:0;font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);padding-top:1px;text-align:right}
+.sched-block-body{flex:1}
+.sched-block-label{font-size:13px;font-weight:500}
+.sched-block-sub{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px}
 </style>
 </head>
 <body>
@@ -227,7 +238,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
   </div>
 </div>
 <header>
-  <div class="logo"><span id="hdr-page-name">Loading…</span> <span id="hdr-sub">/ Eli Crist</span></div>
+  <div class="logo"><span id="hdr-page-name">Loading…</span> <span id="hdr-sub"></span></div>
   <div class="hdr-right">
     <a class="hub-link" href="hub.html">← hub</a>
     <div class="hdr-meta" id="hdr-date"></div>
@@ -294,7 +305,7 @@ const renderAuthStatus=()=>{
   const btn=document.getElementById('set-signout-btn');
   if(!statusEl) return;
   if(authSession){
-    statusEl.textContent='Signed in as '+(authSession.user?.email||'elicrist@icloud.com');
+    statusEl.textContent='Signed in as '+(authSession.user?.email||'unknown user');
     if(btn) btn.style.display='inline-flex';
   }else{
     statusEl.textContent='Not signed in';
@@ -348,7 +359,7 @@ const loadArchivedPages=async()=>{
 };
 const unarchivePage=async(id)=>{try{const url=`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`;const resp=await fetch(url,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({archived:false,archived_at:null})});if(!resp.ok) throw new Error(`Patch failed ${resp.status}`);if(String(id)===String(pageId)){location.reload();return;}await renderPagesSidebar();await loadArchivedPages();}catch(e){console.error('unarchivePage failed',e);alert('Unarchive failed.');}};
 const deletePagePermanently=async(id)=>{try{const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?id=eq.${id}&select=name`);const name=rows[0]?.name||'this page';if(!confirm(`Permanently delete "${name}"? This cannot be undone.`))return;const resp=await fetch(`${SB_URL}/rest/v1/ec_pages?id=eq.${id}`,{method:'DELETE',headers:buildHeaders()});if(!resp.ok) throw new Error(`Delete failed ${resp.status}`);await loadArchivedPages();}catch(e){console.error('deletePagePermanently failed',e);alert('Delete failed.');}};
-let cfg=GS('cfg',{name:'Eli Crist'});
+let cfg=GS('cfg',{name:''});
 const loadHeaderName=async()=>{
   try{
     const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_config?key=eq.name&select=value`);
@@ -366,6 +377,8 @@ const WIDGET_TYPE_DEFS=[
   {type:'countdown',label:'Countdown',sub:'Countdown to a target date',defaultConfig:title=>({target_date:pbDefaultTargetDate(),label:title})},
   {type:'funded_checklist',label:'Funded checklist',sub:'Checklist with a completion target count',defaultConfig:title=>({target_count:5,label:title})},
   {type:'workout_log',label:'Workout log',sub:'Log of workout sets/reps',defaultConfig:()=>({})},
+  {type:'golf_log',label:'Golf log',sub:'Log of golf rounds',defaultConfig:()=>({})},
+  {type:'tennis_log',label:'Tennis log',sub:'Log of tennis sessions',defaultConfig:()=>({})},
 ];
 const PB_COLORS=['#B3A369','#e07b4a','#5b8dee','#9AAFBF','#5cb87a','#9b7fe8','#e8c56a','#e05b5b'];
 let pbDotColor=PB_COLORS[0];
@@ -498,44 +511,87 @@ const saveWidgetData=async id=>{
   const resp=await fetch(`${SB_URL}/rest/v1/ec_widget_data?page_widget_id=eq.${id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({data:entry.data})});
   if(!resp.ok) throw new Error(`Widget data save failed ${resp.status}`);
 };
+const patchWidgetConfig=async(id,newConfig)=>{
+  const w=findWidget(id);
+  if(!w)return;
+  const resp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets?id=eq.${id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({config:newConfig})});
+  if(!resp.ok) throw new Error(`Widget config save failed ${resp.status}`);
+  w.config=newConfig;
+};
 
 // --- savings ---
+function computeSavingsBalance(start,entries){
+  let b=start;
+  entries.forEach(e=>{
+    const amt=Number(e.amount)||0;
+    if(e.type==='balance')b=amt;
+    else if(e.type==='expense')b-=amt;
+    else b+=amt; // paycheck, or legacy entries with no type
+  });
+  return b;
+}
 function renderSavingsWidget(w){
   const body=document.getElementById(`widget-body-${w.id}`);
   const cfg=w.config||{};
   const goal=Number(cfg.goal)||0;
   const start=Number(cfg.start)||0;
+  const rate=Number(cfg.rate)||0;
+  const deadline=cfg.deadline||'';
   const data=widgetDataMap[w.id].data||{};
   const entries=data.entries||[];
-  const current=start+entries.reduce((s,e)=>s+(Number(e.amount)||0),0);
-  const pct=goal?Math.min(100,Math.max(0,(current/goal)*100)):0;
+  const current=computeSavingsBalance(start,entries);
+  const range=goal-start;
+  const gained=current-start;
+  const pct=range>0?Math.min(100,Math.max(0,(gained/range)*100)):(goal?Math.min(100,Math.max(0,(current/goal)*100)):0);
+  const rem=Math.max(0,goal-current);
+
+  let weeksLeft=null;
+  if(deadline){
+    const diff=new Date(deadline+'T00:00:00')-new Date();
+    weeksLeft=Math.max(0,Math.ceil(diff/(1000*60*60*24*7)));
+  }
+  const perWeek=(weeksLeft!==null&&weeksLeft>0)?rem/weeksLeft:null;
+  const hoursToGoal=rate>0?Math.round(rem/rate):null;
+  const onTrack=(perWeek!==null&&rate>0)?(perWeek<=rate*30):null;
+
+  const paceCards=(deadline||rate>0)?`
+    <div class="grid-4" style="margin-bottom:1rem">
+      <div class="stat"><div class="stat-label">weeks left</div><div class="stat-value" style="font-size:18px">${weeksLeft===null?'—':weeksLeft}</div></div>
+      <div class="stat"><div class="stat-label">needed / week</div><div class="stat-value" style="font-size:18px">${perWeek===null?'—':'$'+perWeek.toFixed(2)}</div></div>
+      <div class="stat"><div class="stat-label">hours to goal</div><div class="stat-value" style="font-size:18px">${hoursToGoal===null?'—':hoursToGoal}</div></div>
+      <div class="stat"><div class="stat-label">on track?</div><div class="stat-value ${onTrack===null?'':onTrack?'ok':'danger'}" style="font-size:18px">${onTrack===null?'—':onTrack?'Yes':'Tight'}</div></div>
+    </div>`:'';
+
   body.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
       <div class="stat-value" style="margin-top:0">$${current.toFixed(2)}</div>
       <div class="stat-sub">of $${goal.toFixed(2)}</div>
     </div>
     <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
+    ${paceCards}
     <div class="form-row" style="margin-top:1rem">
       <div class="field"><label>date</label><input type="date" id="sv-date-${w.id}" value="${todayStr()}"></div>
+      <div class="field"><label>type</label><select id="sv-type-${w.id}"><option value="paycheck">Paycheck</option><option value="balance">Balance update</option><option value="expense">Expense</option></select></div>
       <div class="field"><label>amount</label><input type="number" id="sv-amt-${w.id}" step="0.01" placeholder="0.00"></div>
       <div class="field"><label>note</label><input type="text" id="sv-note-${w.id}" placeholder="optional"></div>
       <button class="btn btn-primary" onclick="addSavingsEntry(${w.id})">Add</button>
     </div>
     <div style="overflow-x:auto"><table class="log-table">
-      <thead><tr><th>Date</th><th>Amount</th><th>Note</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Note</th><th></th></tr></thead>
       <tbody>${entries.length?[...entries].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>`
-        <tr><td>${e.date||'—'}</td><td>$${(Number(e.amount)||0).toFixed(2)}</td><td>${e.note||'—'}</td>
-        <td><button class="del" onclick="delSavingsEntry(${w.id},'${e.id}')">×</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">No entries yet.</td></tr>'}</tbody>
+        <tr><td>${e.date||'—'}</td><td>${e.type||'paycheck'}</td><td>${e.type==='expense'?'-':'+'} $${(Number(e.amount)||0).toFixed(2)}</td><td>${e.note||'—'}</td>
+        <td><button class="del" onclick="delSavingsEntry(${w.id},'${e.id}')">×</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No entries yet.</td></tr>'}</tbody>
     </table></div>`;
 }
 async function addSavingsEntry(id){
   const date=document.getElementById(`sv-date-${id}`).value;
+  const type=document.getElementById(`sv-type-${id}`).value;
   const amount=parseFloat(document.getElementById(`sv-amt-${id}`).value);
-  if(!date||!amount)return;
+  if(!date||isNaN(amount))return;
   const note=document.getElementById(`sv-note-${id}`).value.trim();
   const data=widgetDataMap[id].data;
   if(!data.entries)data.entries=[];
-  data.entries.push({id:String(Date.now()),date,amount,note});
+  data.entries.push({id:String(Date.now()),date,type,amount,note});
   renderWidgetById(id);
   try{await saveWidgetData(id);}catch(e){console.error('addSavingsEntry save failed',e);alert('Save failed — try again.');}
 }
@@ -657,30 +713,100 @@ async function delNoteEntry(id,entryId){
   try{await saveWidgetData(id);}catch(e){console.error('delNoteEntry save failed',e);alert('Save failed — try again.');}
 }
 
-// --- schedule ---
+// --- schedule (hybrid: weekly recurring template + one-off dated entries, merged per day) ---
+const SCHED_DAY_NAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+let scheduleSelectedDay={}; // {widgetId: 0-6}
+function schedWeekdayIdx(d=new Date()){const j=d.getDay();return j===0?6:j-1;}
+
 function renderScheduleWidget(w){
   const body=document.getElementById(`widget-body-${w.id}`);
+  const cfg=w.config||{};
+  const template=cfg.template||{};
   const data=widgetDataMap[w.id].data||{};
-  const events=[...(data.events||[])].sort((a,b)=>`${a.date} ${a.time||''}`.localeCompare(`${b.date} ${b.time||''}`));
+  const events=data.events||[];
+  const dates=weekDates();
+  const dayIdx=scheduleSelectedDay[w.id]??schedWeekdayIdx();
+  scheduleSelectedDay[w.id]=dayIdx;
+  const selectedDate=dates[dayIdx];
+
+  const dayNav=SCHED_DAY_NAMES.map((dn,i)=>`
+    <div class="sched-day-chip${i===dayIdx?' active':''}" onclick="selectScheduleDay(${w.id},${i})">
+      <div>${dn}</div><div style="font-size:9px;opacity:.65">${dates[i].slice(5)}</div>
+    </div>`).join('');
+
+  const dayBlocks=(template[String(dayIdx)]?.blocks||[]).map(b=>({time:b.time||'',label:b.label,sublabel:b.sublabel,id:b.id,_source:'template'}));
+  const dayEvents=events.filter(e=>e.date===selectedDate).map(e=>({time:e.time||'',label:e.title,sublabel:'',id:e.id,_source:'event'}));
+  const merged=[...dayBlocks,...dayEvents].sort((a,b)=>a.time.localeCompare(b.time));
+
+  const mergedHtml=merged.length?merged.map(item=>`
+    <div class="sched-block-row">
+      <div class="sched-block-time">${item.time||'—'}</div>
+      <div class="sched-block-body">
+        <div class="sched-block-label">${item.label}${item._source==='event'?' <span style="font-size:9px;color:var(--accent);font-family:\'DM Mono\',monospace">· one-off</span>':''}</div>
+        ${item.sublabel?`<div class="sched-block-sub">${item.sublabel}</div>`:''}
+      </div>
+      <button class="del" onclick="${item._source==='template'?`removeTemplateBlock(${w.id},${dayIdx},'${item.id}')`:`delScheduleEvent(${w.id},'${item.id}')`}">×</button>
+    </div>`).join(''):'<div class="empty">Nothing scheduled for this day yet.</div>';
+
   body.innerHTML=`
-    <div class="form-row">
-      <div class="field"><label>date</label><input type="date" id="sc-date-${w.id}"></div>
-      <div class="field"><label>time</label><input type="time" id="sc-time-${w.id}"></div>
-      <div class="field"><label>title</label><input type="text" id="sc-title-${w.id}" placeholder="Event title"></div>
-      <button class="btn btn-primary" onclick="addScheduleEvent(${w.id})">Add</button>
-    </div>
-    <div style="overflow-x:auto"><table class="log-table">
-      <thead><tr><th>Date</th><th>Time</th><th>Title</th><th></th></tr></thead>
-      <tbody>${events.length?events.map(e=>`
-        <tr><td>${e.date}</td><td>${e.time||'—'}</td><td>${e.title}</td>
-        <td><button class="del" onclick="delScheduleEvent(${w.id},'${e.id}')">×</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">No events yet.</td></tr>'}</tbody>
-    </table></div>`;
+    <div class="sched-day-nav">${dayNav}</div>
+    <div style="margin:1rem 0">${mergedHtml}</div>
+    <div class="grid-2">
+      <div class="card" style="background:var(--surface)">
+        <div class="section-title">add recurring block — every ${SCHED_DAY_NAMES[dayIdx]}</div>
+        <div class="form-row">
+          <div class="field" style="max-width:100px"><label>time</label><input type="time" id="sc-b-time-${w.id}"></div>
+          <div class="field"><label>label</label><input type="text" id="sc-b-label-${w.id}" placeholder="e.g. Work"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>sublabel (optional)</label><input type="text" id="sc-b-sub-${w.id}" placeholder="optional detail"></div>
+          <button class="btn btn-primary" onclick="addTemplateBlock(${w.id})">Add</button>
+        </div>
+      </div>
+      <div class="card" style="background:var(--surface)">
+        <div class="section-title">add one-off entry</div>
+        <div class="form-row">
+          <div class="field"><label>date</label><input type="date" id="sc-e-date-${w.id}" value="${selectedDate}"></div>
+          <div class="field" style="max-width:100px"><label>time</label><input type="time" id="sc-e-time-${w.id}"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>title</label><input type="text" id="sc-e-title-${w.id}" placeholder="Event title"></div>
+          <button class="btn btn-primary" onclick="addScheduleEvent(${w.id})">Add</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function selectScheduleDay(id,dayIdx){scheduleSelectedDay[id]=dayIdx;renderWidgetById(id);}
+
+async function addTemplateBlock(id){
+  const w=findWidget(id);
+  if(!w)return;
+  const dayIdx=scheduleSelectedDay[id]??schedWeekdayIdx();
+  const time=document.getElementById(`sc-b-time-${id}`).value;
+  const label=document.getElementById(`sc-b-label-${id}`).value.trim();
+  if(!label)return;
+  const sublabel=document.getElementById(`sc-b-sub-${id}`).value.trim();
+  const newConfig=JSON.parse(JSON.stringify(w.config||{}));
+  if(!newConfig.template)newConfig.template={};
+  if(!newConfig.template[String(dayIdx)])newConfig.template[String(dayIdx)]={blocks:[]};
+  newConfig.template[String(dayIdx)].blocks.push({id:String(Date.now()),time,label,sublabel});
+  try{await patchWidgetConfig(id,newConfig);renderWidgetById(id);}catch(e){console.error('addTemplateBlock save failed',e);alert('Save failed — try again.');}
+}
+async function removeTemplateBlock(id,dayIdx,blockId){
+  const w=findWidget(id);
+  if(!w)return;
+  const newConfig=JSON.parse(JSON.stringify(w.config||{}));
+  const day=newConfig.template?.[String(dayIdx)];
+  if(!day)return;
+  day.blocks=(day.blocks||[]).filter(b=>String(b.id)!==String(blockId));
+  try{await patchWidgetConfig(id,newConfig);renderWidgetById(id);}catch(e){console.error('removeTemplateBlock save failed',e);alert('Save failed — try again.');}
 }
 async function addScheduleEvent(id){
-  const date=document.getElementById(`sc-date-${id}`).value;
-  const title=document.getElementById(`sc-title-${id}`).value.trim();
+  const date=document.getElementById(`sc-e-date-${id}`).value;
+  const title=document.getElementById(`sc-e-title-${id}`).value.trim();
   if(!date||!title)return;
-  const time=document.getElementById(`sc-time-${id}`).value;
+  const time=document.getElementById(`sc-e-time-${id}`).value;
   const data=widgetDataMap[id].data;
   if(!data.events)data.events=[];
   data.events.push({id:String(Date.now()),date,time,title});
@@ -762,43 +888,235 @@ async function delFundedItem(id,itemId){
 }
 
 // --- workout_log ---
+let workoutSessionSets={};   // {widgetId: [{exercise,weight,reps,sets}]} — staging buffer, not persisted until saved
+let workoutFilter={};        // {widgetId: 'all'|exerciseName}
+let workoutProgramOpen={};   // {widgetId: bool}
+
+function computeWorkoutPRs(entries){
+  const p={};
+  entries.forEach(e=>{
+    if(!e.exercise)return;
+    const wt=Number(e.weight)||0;
+    const reps=Number(e.reps)||0;
+    if(!p[e.exercise]||wt>p[e.exercise].wt||(wt===p[e.exercise].wt&&reps>p[e.exercise].reps)){
+      p[e.exercise]={wt,reps,date:e.date};
+    }
+  });
+  return p;
+}
+
 function renderWorkoutLogWidget(w){
   const body=document.getElementById(`widget-body-${w.id}`);
   const data=widgetDataMap[w.id].data||{};
-  const entries=[...(data.entries||[])].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const entries=data.entries||[];
+  const names=data.exerciseNames||[];
+  const program=w.config?.program||null;
+  const days=program?.days||{};
+  const targets=program?.targets||[];
+  const hasProgramDays=Object.keys(days).some(k=>(days[k]?.exercises||[]).length);
+  const staged=workoutSessionSets[w.id]||[];
+  const filter=workoutFilter[w.id]||'all';
+  const editorOpen=!!workoutProgramOpen[w.id];
+
+  const prs=computeWorkoutPRs(entries);
+  const prEntries=Object.entries(prs);
+  const prHtml=`
+    <div class="section-title">personal records</div>
+    ${prEntries.length?prEntries.map(([ex,pr])=>`
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--faint)">
+        <div style="font-size:12px">${ex}</div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--accent)">${pr.wt?pr.wt+' lbs × ':''}${pr.reps} reps</div>
+      </div>`).join(''):'<div class="empty" style="padding:.5rem 0">No PRs yet.</div>'}`;
+
+  const quickLoadHtml=hasProgramDays?`
+    <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin:.75rem 0 6px">quick load from program</div>
+    <div class="form-row" style="margin-bottom:.25rem">${SCHED_DAY_NAMES.map((dn,i)=>{
+      const day=days[String(i)];
+      if(!day||!(day.exercises||[]).length)return '';
+      return `<button type="button" class="btn btn-sm" onclick="loadProgramDayIntoSession(${w.id},${i})">${dn}</button>`;
+    }).join('')}</div>`:'';
+
+  const progressionHtml=targets.length?`
+    <div style="border-top:1px solid var(--border);padding-top:.6rem;margin-top:.6rem">
+      <div class="section-title">progression check</div>
+      ${targets.map(t=>{
+        const key=Object.keys(prs).find(k=>k.toLowerCase().includes((t.name||'').toLowerCase()));
+        const pr=key?prs[key]:null;
+        const hit=pr&&(!t.targetW||pr.wt>=t.targetW)&&(!t.targetR||pr.reps>=t.targetR);
+        return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--faint)">
+          <div style="font-size:12px">${t.name}</div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:${hit?'var(--ok)':'var(--muted)'}">${pr?(pr.wt?pr.wt+' lbs × ':'')+pr.reps+' reps':'no data'}${hit?' — ready to increase':''}</div>
+        </div>`;
+      }).join('')}
+    </div>`:'';
+
+  const programEditorHtml=editorOpen?`
+    <div class="card" style="background:var(--surface);margin-top:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <div class="section-title" style="margin:0">program (optional)</div>
+        <button class="btn btn-sm" onclick="toggleProgramEditor(${w.id})">Close</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:.5rem">Define your own weekly plan and progression targets. Nothing here is pre-filled.</div>
+      ${SCHED_DAY_NAMES.map((dn,i)=>{
+        const day=days[String(i)]||{exercises:[]};
+        return `<div style="border-top:1px solid var(--border);padding-top:.5rem;margin-top:.5rem">
+          <div style="font-size:12px;font-weight:600;margin-bottom:.3rem">${dn}</div>
+          ${(day.exercises||[]).map((ex,idx)=>`
+            <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+              <div style="flex:1;font-size:12px">${ex.n} — ${ex.s||'?'}×${ex.r||'?'}${ex.w?' @ '+ex.w:''}</div>
+              <button class="del" onclick="removeProgramExercise(${w.id},${i},${idx})">×</button>
+            </div>`).join('')}
+          <div class="form-row" style="margin-bottom:0">
+            <div class="field"><input type="text" id="prog-name-${w.id}-${i}" placeholder="exercise"></div>
+            <div class="field" style="max-width:55px"><input type="text" id="prog-sets-${w.id}-${i}" placeholder="sets"></div>
+            <div class="field" style="max-width:65px"><input type="text" id="prog-reps-${w.id}-${i}" placeholder="reps"></div>
+            <div class="field" style="max-width:85px"><input type="text" id="prog-weight-${w.id}-${i}" placeholder="weight"></div>
+            <button class="btn btn-sm" onclick="addProgramExercise(${w.id},${i})">Add</button>
+          </div>
+        </div>`;
+      }).join('')}
+      <div style="border-top:1px solid var(--border);padding-top:.5rem;margin-top:.5rem">
+        <div style="font-size:12px;font-weight:600;margin-bottom:.3rem">progression targets</div>
+        ${targets.map((t,idx)=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+            <div style="flex:1;font-size:12px">${t.name} — target ${t.targetW?t.targetW+' lbs × ':''}${t.targetR||'?'} reps</div>
+            <button class="del" onclick="removeProgramTarget(${w.id},${idx})">×</button>
+          </div>`).join('')}
+        <div class="form-row" style="margin-bottom:0">
+          <div class="field"><input type="text" id="prog-t-name-${w.id}" placeholder="lift name"></div>
+          <div class="field" style="max-width:85px"><input type="number" id="prog-t-weight-${w.id}" placeholder="target lbs"></div>
+          <div class="field" style="max-width:85px"><input type="number" id="prog-t-reps-${w.id}" placeholder="target reps"></div>
+          <button class="btn btn-sm" onclick="addProgramTarget(${w.id})">Add</button>
+        </div>
+      </div>
+    </div>`:'';
+
+  const stagedHtml=staged.length?staged.map((s,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--faint)">
+      <div style="flex:1;font-size:12px">${s.exercise}</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--accent)">${s.sets}×${s.reps}${s.weight?' @ '+s.weight+' lbs':''}</div>
+      <button class="del" onclick="removeStagedSet(${w.id},${i})">×</button>
+    </div>`).join(''):'<div class="empty" style="padding:.5rem 0">No sets staged yet.</div>';
+
+  const exerciseSelectHtml=names.length?`<select id="wl-ex-${w.id}">${names.map(n=>`<option value="${n}">${n}</option>`).join('')}</select>`
+    :`<div style="font-size:11px;color:var(--muted)">Add an exercise name below first.</div>`;
+
+  const filtered=filter==='all'?entries:entries.filter(e=>e.exercise===filter);
+  const sortedEntries=[...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
   body.innerHTML=`
-    <div class="form-row">
-      <div class="field"><label>date</label><input type="date" id="wl-date-${w.id}" value="${todayStr()}"></div>
-      <div class="field"><label>exercise</label><input type="text" id="wl-ex-${w.id}" placeholder="Bench press"></div>
+    <div class="grid-2" style="margin-bottom:1rem">
+      <div>
+        ${prHtml}
+        ${quickLoadHtml}
+        ${progressionHtml}
+        <button class="btn btn-sm" style="margin-top:.6rem" onclick="toggleProgramEditor(${w.id})">${editorOpen?'Close program editor':'Edit program'}</button>
+        ${programEditorHtml}
+      </div>
+      <div>
+        <div class="section-title">log session</div>
+        <div class="form-row"><div class="field"><label>date</label><input type="date" id="wl-date-${w.id}" value="${todayStr()}"></div></div>
+        <div id="wl-staged-${w.id}" style="margin-bottom:.5rem">${stagedHtml}</div>
+        <div class="form-row">
+          <div class="field"><label>exercise</label>${exerciseSelectHtml}</div>
+        </div>
+        <div class="form-row">
+          <div class="field" style="max-width:85px"><label>weight</label><input type="number" id="wl-wt-${w.id}" placeholder="135"></div>
+          <div class="field" style="max-width:75px"><label>reps</label><input type="number" id="wl-reps-${w.id}" placeholder="8"></div>
+          <div class="field" style="max-width:75px"><label>sets</label><input type="number" id="wl-sets-${w.id}" placeholder="3"></div>
+          <button class="btn" onclick="addSetToSession(${w.id})">+ Add</button>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>new exercise name</label><input type="text" id="wl-new-ex-${w.id}" placeholder="e.g. Bench Press"></div>
+          <button class="btn" onclick="addExerciseName(${w.id})">Add name</button>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="saveWorkoutSession(${w.id})">Save Workout Session</button>
+      </div>
     </div>
-    <div class="form-row">
-      <div class="field" style="max-width:90px"><label>weight</label><input type="number" id="wl-wt-${w.id}" placeholder="135"></div>
-      <div class="field" style="max-width:80px"><label>reps</label><input type="number" id="wl-reps-${w.id}" placeholder="8"></div>
-      <div class="field" style="max-width:80px"><label>sets</label><input type="number" id="wl-sets-${w.id}" placeholder="3"></div>
-      <div class="field"><label>notes</label><input type="text" id="wl-notes-${w.id}" placeholder="optional"></div>
-      <button class="btn btn-primary" onclick="addWorkoutEntry(${w.id})">Log</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <div class="section-title" style="margin:0">history</div>
+      <select id="wl-filter-${w.id}" style="width:auto;min-width:140px" onchange="setWorkoutFilter(${w.id},this.value)">
+        <option value="all" ${filter==='all'?'selected':''}>All exercises</option>
+        ${names.map(n=>`<option value="${n}" ${filter===n?'selected':''}>${n}</option>`).join('')}
+      </select>
     </div>
     <div style="overflow-x:auto"><table class="log-table">
-      <thead><tr><th>Date</th><th>Exercise</th><th>Wt</th><th>Reps</th><th>Sets</th><th>Notes</th><th></th></tr></thead>
-      <tbody>${entries.length?entries.map(e=>`
-        <tr><td>${e.date}</td><td>${e.exercise}</td><td>${e.weight||'—'}</td><td>${e.reps||'—'}</td><td>${e.sets||'—'}</td><td>${e.notes||'—'}</td>
-        <td><button class="del" onclick="delWorkoutEntry(${w.id},'${e.id}')">×</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">No entries yet.</td></tr>'}</tbody>
+      <thead><tr><th>Date</th><th>Exercise</th><th>Wt</th><th>Reps</th><th>Sets</th><th></th></tr></thead>
+      <tbody>${sortedEntries.length?sortedEntries.map(e=>`
+        <tr><td>${e.date}</td><td>${e.exercise}</td><td>${e.weight||'—'}</td><td>${e.reps||'—'}</td><td>${e.sets||'—'}</td>
+        <td><button class="del" onclick="delWorkoutEntry(${w.id},'${e.id}')">×</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">No entries yet.</td></tr>'}</tbody>
     </table></div>`;
 }
-async function addWorkoutEntry(id){
-  const date=document.getElementById(`wl-date-${id}`).value;
-  const exercise=document.getElementById(`wl-ex-${id}`).value.trim();
-  if(!date||!exercise)return;
+
+function addExerciseName(id){
+  const el=document.getElementById(`wl-new-ex-${id}`);
+  const name=el.value.trim();
+  if(!name)return;
+  const data=widgetDataMap[id].data;
+  if(!data.exerciseNames)data.exerciseNames=[];
+  if(!data.exerciseNames.includes(name))data.exerciseNames.push(name);
+  el.value='';
+  renderWidgetById(id);
+  saveWidgetData(id).catch(e=>{console.error('addExerciseName save failed',e);alert('Save failed — try again.');});
+}
+
+function setWorkoutFilter(id,val){workoutFilter[id]=val;renderWidgetById(id);}
+
+function addSetToSession(id){
+  const exEl=document.getElementById(`wl-ex-${id}`);
+  if(!exEl){alert('Add an exercise name first.');return;}
+  const exercise=exEl.value;
   const weight=document.getElementById(`wl-wt-${id}`).value;
-  const reps=document.getElementById(`wl-reps-${id}`).value;
-  const sets=document.getElementById(`wl-sets-${id}`).value;
-  const notes=document.getElementById(`wl-notes-${id}`).value.trim();
+  const reps=parseInt(document.getElementById(`wl-reps-${id}`).value)||0;
+  const sets=parseInt(document.getElementById(`wl-sets-${id}`).value)||1;
+  if(!exercise||!reps)return;
+  if(!workoutSessionSets[id])workoutSessionSets[id]=[];
+  workoutSessionSets[id].push({exercise,weight,reps,sets});
+  document.getElementById(`wl-wt-${id}`).value='';
+  document.getElementById(`wl-reps-${id}`).value='';
+  document.getElementById(`wl-sets-${id}`).value='';
+  renderWidgetById(id);
+}
+
+function removeStagedSet(id,idx){
+  if(!workoutSessionSets[id])return;
+  workoutSessionSets[id].splice(idx,1);
+  renderWidgetById(id);
+}
+
+function loadProgramDayIntoSession(id,dayIdx){
+  const w=findWidget(id);
+  const day=w?.config?.program?.days?.[String(dayIdx)];
+  if(!day||!(day.exercises||[]).length)return;
+  workoutSessionSets[id]=day.exercises.map(ex=>{
+    const wtMatch=String(ex.w||'').match(/^(\d+(\.\d+)?)/);
+    const weight=wtMatch?wtMatch[1]:'';
+    const repsMatch=String(ex.r||'').match(/(\d+)(?:-(\d+))?/);
+    const reps=repsMatch?(repsMatch[2]?parseInt(repsMatch[2]):parseInt(repsMatch[1])):0;
+    const sets=parseInt(ex.s)||1;
+    return {exercise:ex.n,weight,reps,sets};
+  });
+  const data=widgetDataMap[id].data;
+  if(!data.exerciseNames)data.exerciseNames=[];
+  day.exercises.forEach(ex=>{if(ex.n&&!data.exerciseNames.includes(ex.n))data.exerciseNames.push(ex.n);});
+  renderWidgetById(id);
+  saveWidgetData(id).catch(e=>console.error('loadProgramDayIntoSession exercise-name save failed',e));
+}
+
+async function saveWorkoutSession(id){
+  const staged=workoutSessionSets[id]||[];
+  if(!staged.length){alert('Add at least one set before saving.');return;}
+  const date=document.getElementById(`wl-date-${id}`).value||todayStr();
   const data=widgetDataMap[id].data;
   if(!data.entries)data.entries=[];
-  data.entries.push({id:String(Date.now()),date,exercise,weight,reps,sets,notes});
+  staged.forEach(s=>{
+    data.entries.push({id:String(Date.now())+'_'+Math.random().toString(36).slice(2),date,exercise:s.exercise,weight:s.weight,reps:s.reps,sets:s.sets});
+  });
+  workoutSessionSets[id]=[];
   renderWidgetById(id);
-  try{await saveWidgetData(id);}catch(e){console.error('addWorkoutEntry save failed',e);alert('Save failed — try again.');}
+  try{await saveWidgetData(id);}catch(e){console.error('saveWorkoutSession save failed',e);alert('Save failed — try again.');}
 }
+
 async function delWorkoutEntry(id,entryId){
   const data=widgetDataMap[id].data;
   data.entries=(data.entries||[]).filter(e=>String(e.id)!==String(entryId));
@@ -806,11 +1124,191 @@ async function delWorkoutEntry(id,entryId){
   try{await saveWidgetData(id);}catch(e){console.error('delWorkoutEntry save failed',e);alert('Save failed — try again.');}
 }
 
+function toggleProgramEditor(id){workoutProgramOpen[id]=!workoutProgramOpen[id];renderWidgetById(id);}
+
+async function addProgramExercise(id,dayIdx){
+  const w=findWidget(id);
+  if(!w)return;
+  const nameEl=document.getElementById(`prog-name-${id}-${dayIdx}`);
+  const name=nameEl.value.trim();
+  if(!name)return;
+  const sets=document.getElementById(`prog-sets-${id}-${dayIdx}`).value.trim();
+  const reps=document.getElementById(`prog-reps-${id}-${dayIdx}`).value.trim();
+  const weight=document.getElementById(`prog-weight-${id}-${dayIdx}`).value.trim();
+  const newConfig=JSON.parse(JSON.stringify(w.config||{}));
+  if(!newConfig.program)newConfig.program={days:{},targets:[]};
+  if(!newConfig.program.days)newConfig.program.days={};
+  if(!newConfig.program.days[String(dayIdx)])newConfig.program.days[String(dayIdx)]={exercises:[]};
+  newConfig.program.days[String(dayIdx)].exercises.push({n:name,s:sets,r:reps,w:weight});
+  try{await patchWidgetConfig(id,newConfig);renderWidgetById(id);}catch(e){console.error('addProgramExercise save failed',e);alert('Save failed — try again.');}
+}
+async function removeProgramExercise(id,dayIdx,exIdx){
+  const w=findWidget(id);
+  if(!w)return;
+  const newConfig=JSON.parse(JSON.stringify(w.config||{}));
+  const day=newConfig.program?.days?.[String(dayIdx)];
+  if(!day)return;
+  day.exercises.splice(exIdx,1);
+  try{await patchWidgetConfig(id,newConfig);renderWidgetById(id);}catch(e){console.error('removeProgramExercise save failed',e);alert('Save failed — try again.');}
+}
+async function addProgramTarget(id){
+  const w=findWidget(id);
+  if(!w)return;
+  const name=document.getElementById(`prog-t-name-${id}`).value.trim();
+  if(!name)return;
+  const targetW=parseFloat(document.getElementById(`prog-t-weight-${id}`).value)||0;
+  const targetR=parseInt(document.getElementById(`prog-t-reps-${id}`).value)||0;
+  const newConfig=JSON.parse(JSON.stringify(w.config||{}));
+  if(!newConfig.program)newConfig.program={days:{},targets:[]};
+  if(!newConfig.program.targets)newConfig.program.targets=[];
+  newConfig.program.targets.push({name,targetW,targetR});
+  try{await patchWidgetConfig(id,newConfig);renderWidgetById(id);}catch(e){console.error('addProgramTarget save failed',e);alert('Save failed — try again.');}
+}
+async function removeProgramTarget(id,idx){
+  const w=findWidget(id);
+  if(!w)return;
+  const newConfig=JSON.parse(JSON.stringify(w.config||{}));
+  if(!newConfig.program?.targets)return;
+  newConfig.program.targets.splice(idx,1);
+  try{await patchWidgetConfig(id,newConfig);renderWidgetById(id);}catch(e){console.error('removeProgramTarget save failed',e);alert('Save failed — try again.');}
+}
+
+// --- golf_log ---
+function renderGolfLogWidget(w){
+  const body=document.getElementById(`widget-body-${w.id}`);
+  const data=widgetDataMap[w.id].data||{};
+  const entries=data.entries||[];
+  const r18=entries.filter(e=>Number(e.holes)===18);
+  const avg=r18.length?Math.round(r18.reduce((s,e)=>s+(Number(e.score)||0),0)/r18.length):null;
+  const best=entries.length?entries.reduce((b,e)=>(!b||(Number(e.score)||0)<(Number(b.score)||0))?e:b,null):null;
+  const sorted=[...entries].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  body.innerHTML=`
+    <div class="grid-4" style="margin-bottom:1rem">
+      <div class="stat"><div class="stat-label">rounds played</div><div class="stat-value" style="font-size:18px">${entries.length}</div></div>
+      <div class="stat"><div class="stat-label">avg score (18)</div><div class="stat-value" style="font-size:18px">${avg===null?'—':avg}</div></div>
+      <div class="stat"><div class="stat-label">best round</div><div class="stat-value" style="font-size:18px">${best?best.score:'—'}</div></div>
+      <div class="stat"><div class="stat-label">best course</div><div class="stat-value" style="font-size:14px">${best?(best.course||'—'):'—'}</div></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>date</label><input type="date" id="gl-date-${w.id}" value="${todayStr()}"></div>
+      <div class="field"><label>course</label><input type="text" id="gl-course-${w.id}" placeholder="Course name"></div>
+      <div class="field"><label>holes</label><select id="gl-holes-${w.id}"><option value="9">9</option><option value="18">18</option></select></div>
+      <div class="field"><label>score</label><input type="number" id="gl-score-${w.id}" placeholder="42"></div>
+      <div class="field"><label>par</label><input type="number" id="gl-par-${w.id}" placeholder="36"></div>
+      <button class="btn btn-primary" onclick="addGolfEntry(${w.id})">Log</button>
+    </div>
+    <div style="overflow-x:auto"><table class="log-table">
+      <thead><tr><th>Date</th><th>Course</th><th>Holes</th><th>Score</th><th>Par</th><th>+/-</th><th></th></tr></thead>
+      <tbody>${sorted.length?sorted.map(e=>{
+        const par=Number(e.par)||null;
+        const diff=par?Number(e.score)-par:null;
+        const ds=diff===null?'—':(diff>0?'+'+diff:diff===0?'E':''+diff);
+        const dc=diff===null?'':diff>0?'danger':diff<0?'ok':'blue';
+        return `<tr><td>${e.date||'—'}</td><td>${e.course||'—'}</td><td>${e.holes||'—'}</td><td>${e.score??'—'}</td><td>${e.par??'—'}</td>
+        <td class="${dc}">${ds}</td><td><button class="del" onclick="delGolfEntry(${w.id},'${e.id}')">×</button></td></tr>`;
+      }).join(''):'<tr><td colspan="7" class="empty">No rounds logged yet.</td></tr>'}</tbody>
+    </table></div>`;
+}
+async function addGolfEntry(id){
+  const date=document.getElementById(`gl-date-${id}`).value;
+  const course=document.getElementById(`gl-course-${id}`).value.trim();
+  const holes=document.getElementById(`gl-holes-${id}`).value;
+  const score=parseInt(document.getElementById(`gl-score-${id}`).value);
+  const par=document.getElementById(`gl-par-${id}`).value;
+  if(!date||isNaN(score))return;
+  const data=widgetDataMap[id].data;
+  if(!data.entries)data.entries=[];
+  data.entries.push({id:String(Date.now()),date,course,holes:Number(holes),score,par:par?Number(par):null});
+  renderWidgetById(id);
+  try{await saveWidgetData(id);}catch(e){console.error('addGolfEntry save failed',e);alert('Save failed — try again.');}
+}
+async function delGolfEntry(id,entryId){
+  const data=widgetDataMap[id].data;
+  data.entries=(data.entries||[]).filter(e=>String(e.id)!==String(entryId));
+  renderWidgetById(id);
+  try{await saveWidgetData(id);}catch(e){console.error('delGolfEntry save failed',e);alert('Save failed — try again.');}
+}
+
+// --- tennis_log ---
+function tennisSetsWon(matches){
+  let sw=0;
+  matches.forEach(e=>{
+    if(!e.score)return;
+    e.score.split(',').forEach(s=>{
+      const p=s.trim().split('-');
+      if(p.length===2&&parseInt(p[0])>parseInt(p[1]))sw++;
+    });
+  });
+  return sw;
+}
+function renderTennisLogWidget(w){
+  const body=document.getElementById(`widget-body-${w.id}`);
+  const data=widgetDataMap[w.id].data||{};
+  const entries=data.entries||[];
+  const matches=entries.filter(e=>e.type==='match');
+  const wins=matches.filter(e=>e.result==='W').length;
+  const setsWon=tennisSetsWon(matches);
+  const sorted=[...entries].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  body.innerHTML=`
+    <div class="grid-4" style="margin-bottom:1rem">
+      <div class="stat"><div class="stat-label">sessions</div><div class="stat-value" style="font-size:18px">${entries.length}</div></div>
+      <div class="stat"><div class="stat-label">match record</div><div class="stat-value" style="font-size:18px">${wins}-${matches.length-wins}</div></div>
+      <div class="stat"><div class="stat-label">sets won</div><div class="stat-value" style="font-size:18px">${setsWon}</div></div>
+      <div class="stat"><div class="stat-label">matches played</div><div class="stat-value" style="font-size:18px">${matches.length}</div></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>date</label><input type="date" id="tn-date-${w.id}" value="${todayStr()}"></div>
+      <div class="field"><label>type</label><select id="tn-type-${w.id}" onchange="renderTennisResultField(${w.id})"><option value="lesson">Lesson</option><option value="practice">Practice / drill</option><option value="match">Match</option><option value="serve">Serve practice</option></select></div>
+      <div class="field"><label>opponent</label><input type="text" id="tn-opp-${w.id}" placeholder="optional"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" id="tn-result-field-${w.id}" style="display:none"><label>result</label><select id="tn-res-${w.id}"><option value="W">Win</option><option value="L">Loss</option></select></div>
+      <div class="field"><label>score</label><input type="text" id="tn-score-${w.id}" placeholder="6-3, 7-5"></div>
+      <div class="field"><label>notes</label><input type="text" id="tn-notes-${w.id}" placeholder="optional"></div>
+      <button class="btn btn-primary" onclick="addTennisEntry(${w.id})">Log</button>
+    </div>
+    <div style="overflow-x:auto"><table class="log-table">
+      <thead><tr><th>Date</th><th>Type</th><th>Opponent</th><th>Result</th><th>Score</th><th>Notes</th><th></th></tr></thead>
+      <tbody>${sorted.length?sorted.map(e=>`
+        <tr><td>${e.date||'—'}</td><td>${e.type||'—'}</td><td>${e.opp||'—'}</td>
+        <td class="${e.result==='W'?'ok':e.result==='L'?'danger':''}">${e.result||'—'}</td>
+        <td>${e.score||'—'}</td><td>${e.notes||'—'}</td>
+        <td><button class="del" onclick="delTennisEntry(${w.id},'${e.id}')">×</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">No sessions logged yet.</td></tr>'}</tbody>
+    </table></div>`;
+}
+function renderTennisResultField(id){
+  const type=document.getElementById(`tn-type-${id}`).value;
+  const field=document.getElementById(`tn-result-field-${id}`);
+  if(field)field.style.display=type==='match'?'flex':'none';
+}
+async function addTennisEntry(id){
+  const date=document.getElementById(`tn-date-${id}`).value;
+  if(!date)return;
+  const type=document.getElementById(`tn-type-${id}`).value;
+  const opp=document.getElementById(`tn-opp-${id}`).value.trim();
+  const result=type==='match'?document.getElementById(`tn-res-${id}`).value:null;
+  const score=document.getElementById(`tn-score-${id}`).value.trim();
+  const notes=document.getElementById(`tn-notes-${id}`).value.trim();
+  const data=widgetDataMap[id].data;
+  if(!data.entries)data.entries=[];
+  data.entries.push({id:String(Date.now()),date,type,opp,result,score,notes});
+  renderWidgetById(id);
+  try{await saveWidgetData(id);}catch(e){console.error('addTennisEntry save failed',e);alert('Save failed — try again.');}
+}
+async function delTennisEntry(id,entryId){
+  const data=widgetDataMap[id].data;
+  data.entries=(data.entries||[]).filter(e=>String(e.id)!==String(entryId));
+  renderWidgetById(id);
+  try{await saveWidgetData(id);}catch(e){console.error('delTennisEntry save failed',e);alert('Save failed — try again.');}
+}
+
 // --- editable widget settings (title always; type-specific config where it exists) ---
 const WIDGET_SETTINGS_FIELDS={
   savings:[
     {key:'goal',label:'goal ($)',type:'number',step:'0.01'},
     {key:'start',label:'starting amount ($)',type:'number',step:'0.01'},
+    {key:'rate',label:'hourly rate ($, optional)',type:'number',step:'0.01'},
+    {key:'deadline',label:'deadline (optional)',type:'date'},
   ],
   countdown:[
     {key:'target_date',label:'target date',type:'date'},
@@ -876,6 +1374,8 @@ const WIDGET_RENDERERS={
   countdown:renderCountdownWidget,
   funded_checklist:renderFundedChecklistWidget,
   workout_log:renderWorkoutLogWidget,
+  golf_log:renderGolfLogWidget,
+  tennis_log:renderTennisLogWidget,
 };
 
 const renderWidgets=()=>{
@@ -883,7 +1383,7 @@ const renderWidgets=()=>{
   const tabbed=pageTabs.length>0;
   const widgetsToShow=tabbed?pageWidgets.filter(w=>String(w.tab_id)===String(activeTabId)):pageWidgets;
   let html=widgetsToShow.map(w=>`
-    <div class="card" id="widget-card-${w.id}">
+    <div class="card${w.widget_type==='schedule'?' widget-card-full':''}" id="widget-card-${w.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
         <div class="section-title" id="widget-title-${w.id}" style="margin:0">${w.title||w.widget_type}</div>
         <button class="btn btn-sm" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">✎</button>
@@ -1113,7 +1613,8 @@ const archiveThisPage=async()=>{
   const authed=await initAuth();
   if(!authed){window.location.href=LOGIN_ENTRY_POINT;return;}
   await loadHeaderName();
-  document.getElementById('hdr-sub').textContent='/ '+(cfg.name||'Eli Crist');
+  const hdrName=cfg.name||authSession?.user?.email||'';
+  document.getElementById('hdr-sub').textContent=hdrName?'/ '+hdrName:'';
   renderPagesSidebar();
   renderPbColors();
   renderPbWidgetTypes();
