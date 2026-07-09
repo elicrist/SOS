@@ -379,6 +379,7 @@ const WIDGET_TYPE_DEFS=[
   {type:'workout_log',label:'Workout log',sub:'Log of workout sets/reps',defaultConfig:()=>({})},
   {type:'golf_log',label:'Golf log',sub:'Log of golf rounds',defaultConfig:()=>({})},
   {type:'tennis_log',label:'Tennis log',sub:'Log of tennis sessions',defaultConfig:()=>({})},
+  {type:'dashboard',label:'Dashboard summary',sub:'Aggregates savings/gym/golf/habits widgets on this page',defaultConfig:()=>({})},
 ];
 const PB_COLORS=['#B3A369','#e07b4a','#5b8dee','#9AAFBF','#5cb87a','#9b7fe8','#e8c56a','#e05b5b'];
 let pbDotColor=PB_COLORS[0];
@@ -548,6 +549,11 @@ function computeSavingsBalance(start,entries){
   });
   return b;
 }
+function computeWeeksLeft(deadline){
+  if(!deadline)return null;
+  const diff=new Date(deadline+'T00:00:00')-new Date();
+  return Math.max(0,Math.ceil(diff/(1000*60*60*24*7)));
+}
 function renderSavingsWidget(w){
   const body=document.getElementById(`widget-body-${w.id}`);
   const cfg=w.config||{};
@@ -563,11 +569,7 @@ function renderSavingsWidget(w){
   const pct=range>0?Math.min(100,Math.max(0,(gained/range)*100)):(goal?Math.min(100,Math.max(0,(current/goal)*100)):0);
   const rem=Math.max(0,goal-current);
 
-  let weeksLeft=null;
-  if(deadline){
-    const diff=new Date(deadline+'T00:00:00')-new Date();
-    weeksLeft=Math.max(0,Math.ceil(diff/(1000*60*60*24*7)));
-  }
+  let weeksLeft=computeWeeksLeft(deadline);
   const perWeek=(weeksLeft!==null&&weeksLeft>0)?rem/weeksLeft:null;
   const hoursToGoal=rate>0?Math.round(rem/rate):null;
   const onTrack=(perWeek!==null&&rate>0)?(perWeek<=rate*30):null;
@@ -1320,6 +1322,93 @@ async function delTennisEntry(id,entryId){
   try{await saveWidgetData(id);}catch(e){console.error('delTennisEntry save failed',e);alert('Save failed — try again.');}
 }
 
+// --- dashboard (aggregates other widgets on the same page — not self-contained) ---
+function renderDashboardWidget(w){
+  const body=document.getElementById(`widget-body-${w.id}`);
+  const today=todayStr();
+  const wIdx=schedWeekdayIdx();
+
+  const savingsWidgets=pageWidgets.filter(pw=>pw.widget_type==='savings');
+  const workoutWidgets=pageWidgets.filter(pw=>pw.widget_type==='workout_log');
+  const golfWidgets=pageWidgets.filter(pw=>pw.widget_type==='golf_log');
+  const habitWidgets=pageWidgets.filter(pw=>pw.widget_type==='habits');
+
+  const sv=savingsWidgets[0];
+  let balanceDisplay='—',weeksLeftDisplay='—',svHtml='<div class="empty">No savings widget on this page yet.</div>';
+  if(sv){
+    const cfg=sv.config||{};
+    const goal=Number(cfg.goal)||0;
+    const start=Number(cfg.start)||0;
+    const entries=(widgetDataMap[sv.id]?.data?.entries)||[];
+    const current=computeSavingsBalance(start,entries);
+    const range=goal-start;
+    const gained=current-start;
+    const pct=range>0?Math.min(100,Math.max(0,(gained/range)*100)):(goal?Math.min(100,Math.max(0,(current/goal)*100)):0);
+    balanceDisplay='$'+current.toFixed(2);
+    const wl=computeWeeksLeft(cfg.deadline);
+    weeksLeftDisplay=wl===null?'—':wl+' wks';
+    svHtml=`
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div class="stat-value" style="margin-top:0">$${current.toFixed(2)}</div>
+        <div class="stat-sub">of $${goal.toFixed(2)}</div>
+      </div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>`;
+  }
+
+  let gymSessions=0;
+  workoutWidgets.forEach(ww=>{
+    const entries=(widgetDataMap[ww.id]?.data?.entries)||[];
+    gymSessions+=new Set(entries.map(e=>e.date)).size;
+  });
+
+  let rounds=0;
+  golfWidgets.forEach(gw=>{ rounds+=((widgetDataMap[gw.id]?.data?.entries)||[]).length; });
+
+  const habitsHtml=habitWidgets.length?habitWidgets.map(hw=>{
+    const log=(widgetDataMap[hw.id]?.data?.log)||{};
+    const done=!!log[today];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--faint)">
+      <div style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:${done?'var(--ok)':'var(--border-light)'}"></div>
+      <div style="font-size:12px;color:${done?'var(--text)':'var(--muted)'}">${hw.title||'Habit'}</div>
+    </div>`;
+  }).join(''):'<div class="empty">No habit widgets on this page yet.</div>';
+  const habitsDoneCount=habitWidgets.filter(hw=>{const log=(widgetDataMap[hw.id]?.data?.log)||{};return !!log[today];}).length;
+
+  let workoutHtml='<div class="empty">No workout program set.</div>';
+  if(workoutWidgets.length){
+    const program=workoutWidgets[0].config?.program;
+    const day=program?.days?.[String(wIdx)];
+    if(day&&(day.exercises||[]).length){
+      workoutHtml=(day.exercises||[]).map(ex=>`<div style="font-size:12px;color:var(--muted);padding:3px 0;display:flex;justify-content:space-between"><span>${ex.n}</span><span style="font-family:'DM Mono',monospace;color:var(--accent)">${ex.s||'?'}×${ex.r||'?'}</span></div>`).join('');
+    }else{
+      workoutHtml='<div class="empty">Rest day, or no exercises set for today.</div>';
+    }
+  }
+
+  body.innerHTML=`
+    <div class="grid-4" style="margin-bottom:1rem">
+      <div class="stat"><div class="stat-label">balance</div><div class="stat-value" style="font-size:20px">${balanceDisplay}</div></div>
+      <div class="stat"><div class="stat-label">weeks left</div><div class="stat-value" style="font-size:20px">${weeksLeftDisplay}</div></div>
+      <div class="stat"><div class="stat-label">gym sessions</div><div class="stat-value" style="font-size:20px">${gymSessions}</div></div>
+      <div class="stat"><div class="stat-label">rounds played</div><div class="stat-value" style="font-size:20px">${rounds}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:1rem;background:var(--surface)">
+      <div class="section-title">savings progress</div>
+      ${svHtml}
+    </div>
+    <div class="grid-2">
+      <div class="card" style="background:var(--surface)">
+        <div class="section-title">today's habits</div>
+        ${habitsHtml}
+        ${habitWidgets.length?`<div style="margin-top:8px;font-size:11px;font-family:'DM Mono',monospace;color:var(--muted)">${habitsDoneCount}/${habitWidgets.length} completed</div>`:''}
+      </div>
+      <div class="card" style="background:var(--surface)">
+        <div class="section-title">today's workout</div>
+        ${workoutHtml}
+      </div>
+    </div>`;
+}
+
 // --- editable widget settings (title always; type-specific config where it exists) ---
 const WIDGET_SETTINGS_FIELDS={
   savings:[
@@ -1394,6 +1483,7 @@ const WIDGET_RENDERERS={
   workout_log:renderWorkoutLogWidget,
   golf_log:renderGolfLogWidget,
   tennis_log:renderTennisLogWidget,
+  dashboard:renderDashboardWidget,
 };
 
 const renderWidgets=()=>{
@@ -1401,7 +1491,7 @@ const renderWidgets=()=>{
   const tabbed=pageTabs.length>0;
   const widgetsToShow=tabbed?pageWidgets.filter(w=>String(w.tab_id)===String(activeTabId)):pageWidgets;
   let html=widgetsToShow.map(w=>`
-    <div class="card${w.widget_type==='schedule'?' widget-card-full':''}" id="widget-card-${w.id}">
+    <div class="card${(w.widget_type==='schedule'||w.widget_type==='dashboard')?' widget-card-full':''}" id="widget-card-${w.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
         <div class="section-title" id="widget-title-${w.id}" style="margin:0">${w.title||w.widget_type}</div>
         <div style="display:flex;gap:6px">
