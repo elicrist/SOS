@@ -25,6 +25,13 @@ input[type=text]{background:var(--surface);border:1px solid var(--border-light);
 .btn:disabled{opacity:.4;cursor:default}
 .toggle-row{display:flex;align-items:center;gap:10px;padding:8px 0}
 .log{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);white-space:pre-wrap;max-height:240px;overflow-y:auto;background:var(--surface);border-radius:8px;padding:10px}
+.itemized-group{margin-bottom:1rem}
+.itemized-group h3{font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.itemized-list{max-height:220px;overflow-y:auto;background:var(--surface);border-radius:8px;border:1px solid var(--border)}
+.itemized-row{display:grid;grid-template-columns:90px 1fr;gap:10px;padding:6px 10px;border-bottom:1px solid var(--faint);font-family:'DM Mono',monospace;font-size:11px}
+.itemized-row:last-child{border-bottom:none}
+.itemized-row .d{color:var(--muted)}
+.itemized-empty{padding:10px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
 .empty{color:var(--muted);font-size:12px;text-align:center;padding:1rem}
 a{color:var(--accent)}
 .pill{display:inline-block;font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px;border:1px solid var(--border-light);color:var(--muted)}
@@ -52,6 +59,12 @@ a{color:var(--accent)}
   <div class="card">
     <div class="section-title">cross-check — old data vs. what the new widgets will compute</div>
     <div id="cross-check"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">itemized preview — every record that will be created</div>
+    <div class="sub" style="margin-bottom:.75rem">Aggregate totals matching doesn't prove individual records are right — two swapped scores can still sum correctly. Scroll each list and check it against your memory / the old tab.</div>
+    <div id="itemized"></div>
   </div>
 
   <button class="btn btn-primary" id="migrate-btn" onclick="runMigration()">Confirm &amp; Migrate</button>
@@ -302,6 +315,56 @@ function renderCrossCheck(){
   document.getElementById('migrate-btn').disabled=!checks.every(c=>c[3]);
 }
 
+function itemizedGroup(title,rows,renderRow){
+  const list=rows.length
+    ?`<div class="itemized-list">${rows.map(renderRow).join('')}</div>`
+    :`<div class="itemized-list"><div class="itemized-empty">Nothing to migrate here.</div></div>`;
+  return `<div class="itemized-group"><h3>${title} (${rows.length})</h3>${list}</div>`;
+}
+function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+function renderItemized(){
+  const el=document.getElementById('itemized');
+  let html='';
+
+  html+=itemizedGroup('Savings entries',
+    [...PLAN.savingsEntries].sort((a,b)=>(a.date||'').localeCompare(b.date||'')),
+    e=>`<div class="itemized-row"><div class="d">${esc(e.date)}</div><div>${esc(e.type)} — ${e.type==='expense'?'-':'+'}$${(Number(e.amount)||0).toFixed(2)}${e.note?' — '+esc(e.note):''}</div></div>`);
+
+  html+=itemizedGroup('Gym entries',
+    [...PLAN.workoutEntries].sort((a,b)=>(a.date||'').localeCompare(b.date||'')),
+    e=>`<div class="itemized-row"><div class="d">${esc(e.date)}</div><div>${esc(e.exercise)} — ${esc(e.weight)} lbs × ${esc(e.reps)} reps × ${esc(e.sets)} sets</div></div>`);
+
+  html+=itemizedGroup('Golf rounds',
+    [...PLAN.golfEntries].sort((a,b)=>(a.date||'').localeCompare(b.date||'')),
+    e=>`<div class="itemized-row"><div class="d">${esc(e.date)}</div><div>${esc(e.course)} — ${esc(e.holes)} holes, score ${esc(e.score)}${e.par?', par '+esc(e.par):''}</div></div>`);
+
+  html+=itemizedGroup('Tennis sessions',
+    [...PLAN.tennisEntries].sort((a,b)=>(a.date||'').localeCompare(b.date||'')),
+    e=>`<div class="itemized-row"><div class="d">${esc(e.date)}</div><div>${esc(e.type)}${e.opp?' vs '+esc(e.opp):''}${e.result?' — '+esc(e.result):''}${e.score?' ('+esc(e.score)+')':''}${e.notes?' — '+esc(e.notes):''}</div></div>`);
+
+  html+=itemizedGroup('Notes',
+    [...PLAN.noteEntries].sort((a,b)=>(a.date||'').localeCompare(b.date||'')),
+    e=>`<div class="itemized-row"><div class="d">${esc(e.date)}</div><div><strong>${esc(e.title)}</strong> — ${esc((e.body||'').slice(0,140))}${(e.body||'').length>140?'…':''}</div></div>`);
+
+  PLAN.habitWidgets.forEach(h=>{
+    const dates=Object.keys(h.log).sort();
+    html+=itemizedGroup(`Habit: ${esc(h.title)} — check-ins`,dates,
+      d=>`<div class="itemized-row"><div class="d">${esc(d)}</div><div>✓ checked</div></div>`);
+  });
+
+  if(PLAN.migrateSchedule){
+    for(let di=0;di<7;di++){
+      const dayName=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][di];
+      const blocks=(PLAN.scheduleTemplate[String(di)]?.blocks)||[];
+      html+=itemizedGroup(`Schedule: ${dayName}`,blocks,
+        b=>`<div class="itemized-row"><div class="d">${esc(b.time)}</div><div>${esc(b.label)}${b.sublabel?' — '+esc(b.sublabel):''}</div></div>`);
+    }
+  }
+
+  el.innerHTML=html;
+}
+
 function log(msg){
   const el=document.getElementById('progress-log');
   el.textContent+=msg+'\n';
@@ -376,11 +439,11 @@ async function runMigration(){
   }
   document.getElementById('loading').style.display='none';
   document.getElementById('app').style.display='block';
-  document.getElementById('page-name').addEventListener('input',()=>{renderPreview();});
-  document.getElementById('toggle-program').addEventListener('change',()=>{renderPreview();});
-  document.getElementById('toggle-schedule').addEventListener('change',()=>{renderPreview();});
-  renderPreview();
-  renderCrossCheck();
+  const rerender=()=>{renderPreview();renderCrossCheck();renderItemized();};
+  document.getElementById('page-name').addEventListener('input',rerender);
+  document.getElementById('toggle-program').addEventListener('change',rerender);
+  document.getElementById('toggle-schedule').addEventListener('change',rerender);
+  rerender();
 })();
 </script>
 </body>
