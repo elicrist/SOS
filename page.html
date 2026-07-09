@@ -518,6 +518,24 @@ const patchWidgetConfig=async(id,newConfig)=>{
   if(!resp.ok) throw new Error(`Widget config save failed ${resp.status}`);
   w.config=newConfig;
 };
+const deleteWidgetInstance=async id=>{
+  const w=findWidget(id);
+  if(!w)return;
+  const label=w.title||w.widget_type;
+  if(!confirm(`Permanently delete the "${label}" widget? This deletes all of its logged data and cannot be undone.`))return;
+  try{
+    const dataResp=await fetch(`${SB_URL}/rest/v1/ec_widget_data?page_widget_id=eq.${id}`,{method:'DELETE',headers:buildHeaders()});
+    if(!dataResp.ok) throw new Error(`Widget data delete failed ${dataResp.status}`);
+    const widgetResp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets?id=eq.${id}`,{method:'DELETE',headers:buildHeaders()});
+    if(!widgetResp.ok) throw new Error(`Widget delete failed ${widgetResp.status}`);
+    pageWidgets=pageWidgets.filter(pw=>String(pw.id)!==String(id));
+    delete widgetDataMap[id];
+    renderWidgets();
+  }catch(e){
+    console.error('deleteWidgetInstance failed',e);
+    alert('Delete failed — try again.');
+  }
+};
 
 // --- savings ---
 function computeSavingsBalance(start,entries){
@@ -1386,7 +1404,10 @@ const renderWidgets=()=>{
     <div class="card${w.widget_type==='schedule'?' widget-card-full':''}" id="widget-card-${w.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
         <div class="section-title" id="widget-title-${w.id}" style="margin:0">${w.title||w.widget_type}</div>
-        <button class="btn btn-sm" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">✎</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">✎</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteWidgetInstance(${w.id})" aria-label="Delete widget">×</button>
+        </div>
       </div>
       <div id="widget-body-${w.id}"></div>
     </div>`).join('');
