@@ -15,6 +15,12 @@
   --bg:#0e0e0f;--surface:#161618;--card:#1c1c1f;--border:#2a2a2e;--border-light:#333338;
   --text:#f0ede8;--muted:#888880;--faint:#2a2a2e;
   --accent:#B3A369;
+  /* Fixed, never overridden by showPageContent()'s per-page dot_color —
+     for chrome that belongs to the app, not to whichever page happens to be
+     open (e.g. the page-builder's "Build page" button). TODO: once app-wide
+     accent-color theming exists (separate planned feature), retire this and
+     point that chrome at the app-wide accent instead of this hardcode. */
+  --accent-default:#B3A369;
   --ok:#5cb87a;--ok-bg:#0e261a;--danger:#e05b5b;--blue:#5b8dee;
 }
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;flex-direction:column;padding-left:52px}
@@ -73,6 +79,11 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .btn{padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border-light);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent)}
+/* Bug fix: this button lives inside the page-builder overlay, which can be
+   opened from any page — it was picking up that page's own accent color via
+   .btn-primary's var(--accent) instead of a fixed app color. See
+   --accent-default in :root for the TODO on app-wide theming. */
+#pb-build-btn{background:color-mix(in srgb,var(--accent-default) 14%,var(--card));border-color:var(--accent-default);color:var(--accent-default)}
 .btn-sm{padding:4px 10px;font-size:11px}
 .btn-danger{border-color:var(--danger);color:var(--danger)}
 .log-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:.5rem}
