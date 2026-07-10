@@ -79,11 +79,16 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .btn{padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border-light);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent)}
-/* Bug fix: this button lives inside the page-builder overlay, which can be
-   opened from any page — it was picking up that page's own accent color via
-   .btn-primary's var(--accent) instead of a fixed app color. See
-   --accent-default in :root for the TODO on app-wide theming. */
-#pb-build-btn{background:color-mix(in srgb,var(--accent-default) 14%,var(--card));border-color:var(--accent-default);color:var(--accent-default)}
+/* Bug fix: these two buttons live inside the page-builder overlay, which can
+   be opened from any page — they were picking up that page's own accent
+   color via .btn-primary's var(--accent) instead of a fixed app color.
+   Audited every other .btn-primary in the file (2026-07 pass): everything
+   outside #page-builder-overlay is a genuine per-page action (adding an
+   entry to a widget on the current page, saving that page's widget
+   settings, etc.) and correctly should keep inheriting var(--accent) — only
+   these two are page-agnostic app chrome. See --accent-default in :root for
+   the TODO on app-wide theming. */
+#pb-next-btn,#pb-build-btn{background:color-mix(in srgb,var(--accent-default) 14%,var(--card));border-color:var(--accent-default);color:var(--accent-default)}
 .btn-sm{padding:4px 10px;font-size:11px}
 .btn-danger{border-color:var(--danger);color:var(--danger)}
 .log-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:.5rem}
@@ -224,7 +229,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
         <label style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;display:block;margin-bottom:8px">dot color</label>
         <div id="pb-colors" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
-      <button class="btn btn-primary" style="width:100%" onclick="pbGoStep2()">Next: choose widgets</button>
+      <button class="btn btn-primary" style="width:100%" id="pb-next-btn" onclick="pbGoStep2()">Next: choose widgets</button>
     </div>
     <div id="pb-step2" style="display:none;flex-direction:column;flex:1;min-height:0">
       <div style="overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0">
@@ -1794,12 +1799,33 @@ const deleteTabInstance=async id=>{
 
 // Widget reorder — same constrained-drop pattern as tabs: dragging is scoped
 // to the widget grid's own bounding box, and a drop outside it is a no-op.
+// Unlike tabs, widgets get live feedback: the dragged card itself follows
+// the cursor (custom drag image — tabs get this for free natively since
+// their draggable element IS the visible pill; a widget's draggable element
+// is just the small handle icon, which is all the browser would show
+// otherwise), and the other widgets on the tab reflow in real time to
+// preview where it'll land, via direct DOM moves (not re-rendering widget
+// bodies) so no widget's in-progress form state gets wiped mid-drag.
 let dragWidgetId=null;
+let widgetDragPreview=null; // {index,stack} — last computed live-preview target while dragging
+let widgetDragSnapshot=null; // frozen {id,rect}[] captured once at drag start — see note below
 const onWidgetDragStart=(e,id)=>{
   dragWidgetId=id;
+  widgetDragPreview=null;
   e.dataTransfer.effectAllowed='move';
   const card=document.getElementById(`widget-card-${id}`);
-  if(card)card.classList.add('widget-dragging');
+  if(card){
+    card.classList.add('widget-dragging');
+    try{ e.dataTransfer.setDragImage(card,20,20); }catch(err){}
+  }
+  // Freeze every card's geometry now, before any preview reflow happens.
+  // Target-finding uses this snapshot for the whole gesture instead of
+  // re-querying the live DOM — otherwise each live-reflow below would move
+  // cards, which shifts what's "nearest" the cursor, which can make the
+  // final drop resolve somewhere the user never actually pointed at.
+  const wrap=document.getElementById('page-widgets');
+  widgetDragSnapshot=wrap?[...wrap.querySelectorAll('.card:not(.widget-add-card)')]
+    .map(el=>({id:el.id.replace('widget-card-',''),rect:el.getBoundingClientRect()})):[];
 };
 const onWidgetDragEnd=e=>{
   if(dragWidgetId!=null){
@@ -1807,29 +1833,118 @@ const onWidgetDragEnd=e=>{
     if(card)card.classList.remove('widget-dragging');
   }
   dragWidgetId=null;
+  widgetDragPreview=null;
+  widgetDragSnapshot=null;
+  renderWidgets(); // snaps back to the true persisted order if nothing was dropped
 };
-const onWidgetGridDragOver=e=>{
-  if(dragWidgetId==null)return;
-  if(isWithinRect(e.clientX,e.clientY,document.getElementById('page-widgets'))) e.preventDefault();
-};
+
 // Two drop zones per target card: the bottom quarter means "stack a new,
 // full-width row right after this card" (sets fullRow); everything else is
 // a normal reorder, which also clears fullRow so a previously-stacked
-// widget can rejoin pairing by being dragged into a normal zone.
-const findWidgetDropTarget=(clientX,clientY,cardEls)=>{
-  if(!cardEls.length)return {index:0,stack:false};
-  let nearestIdx=0,nearestDist=Infinity;
-  cardEls.forEach((el,i)=>{
-    const r=el.getBoundingClientRect();
+// widget can rejoin pairing by being dragged into a normal zone. Operates on
+// the frozen snapshot (see widgetDragSnapshot), not a live DOM query, and
+// returns the target widget's id rather than a DOM/array index.
+const findWidgetDropTarget=(clientX,clientY,snapshot)=>{
+  if(!snapshot||!snapshot.length)return null;
+  let nearest=null,nearestDist=Infinity;
+  snapshot.forEach(item=>{
+    const r=item.rect;
     const cx=r.left+r.width/2,cy=r.top+r.height/2;
     const dist=Math.hypot(clientX-cx,clientY-cy);
-    if(dist<nearestDist){nearestDist=dist;nearestIdx=i;}
+    if(dist<nearestDist){nearestDist=dist;nearest=item;}
   });
-  const r=cardEls[nearestIdx].getBoundingClientRect();
+  const r=nearest.rect;
   const fracY=(clientY-r.top)/r.height;
-  if(fracY>0.75) return {index:nearestIdx+1,stack:true};
+  if(fracY>0.75) return {targetId:nearest.id,before:false,stack:true};
   const frac=(clientX-r.left)/r.width+fracY;
-  return {index:frac<1?nearestIdx:nearestIdx+1,stack:false};
+  return {targetId:nearest.id,before:frac<1,stack:false};
+};
+// Resolves a findWidgetDropTarget() result to an insertion index within the
+// TRUE (sort_order-based) widget array — deliberately independent of
+// whatever order the DOM currently renders in, since the live preview below
+// moves cards around visually without touching sort_order.
+const resolveWidgetDropIndex=(widgetsToShow,target)=>{
+  if(!target)return widgetsToShow.length;
+  const idx=widgetsToShow.findIndex(w=>String(w.id)===String(target.targetId));
+  if(idx<0)return widgetsToShow.length;
+  return target.before?idx:idx+1;
+};
+// Builds the widget list as it would look if dropped at the given preview
+// target right now — a throwaway computation (new objects, never mutates
+// pageWidgets) used only to drive the live reflow while dragging.
+const widgetsWithPreview=(widgetsToShow,fromIdx,toIdx,stack)=>{
+  const draggedWidget=widgetsToShow[fromIdx];
+  const alwaysForced=draggedWidget.widget_type==='schedule'||draggedWidget.widget_type==='dashboard';
+  const sorted=[...widgetsToShow];
+  const [moved]=sorted.splice(fromIdx,1);
+  let insertAt=toIdx>fromIdx?toIdx-1:toIdx;
+  insertAt=Math.max(0,Math.min(insertAt,sorted.length));
+  const previewMoved={...moved,config:{...(moved.config||{}),fullRow:alwaysForced?true:stack}};
+  sorted.splice(insertAt,0,previewMoved);
+  return sorted;
+};
+// Moves the already-rendered .card elements into the correct .widget-row
+// wrapper structure via the DOM (insertBefore/appendChild), never innerHTML —
+// so each widget's own internal state (open program editor, typed-but-
+// unsaved text) survives the reflow. Animates via a basic FLIP: capture
+// positions before the move, then transform-offset each moved card back to
+// its old spot and transition to identity.
+const relayoutWidgetDOM=widgets=>{
+  const wrap=document.getElementById('page-widgets');
+  if(!wrap)return;
+  const cards=[...wrap.querySelectorAll('.card:not(.widget-add-card)')];
+  const firstRects=new Map(cards.map(el=>[el.id,el.getBoundingClientRect()]));
+
+  const rows=computeWidgetRows(widgets);
+  rows.forEach((row,rowIdx)=>{
+    let rowEl=wrap.children[rowIdx];
+    if(!rowEl||!rowEl.classList.contains('widget-row')){
+      rowEl=document.createElement('div');
+      rowEl.className='widget-row';
+      wrap.insertBefore(rowEl,wrap.children[rowIdx]||null);
+    }
+    row.forEach(w=>{
+      const cardEl=document.getElementById(`widget-card-${w.id}`);
+      if(cardEl) rowEl.appendChild(cardEl);
+    });
+  });
+  [...wrap.querySelectorAll(':scope > .widget-row')].forEach(el=>{ if(!el.querySelector('.card')) el.remove(); });
+
+  cards.forEach(el=>{
+    const first=firstRects.get(el.id);
+    if(!first)return;
+    const last=el.getBoundingClientRect();
+    const dx=first.left-last.left,dy=first.top-last.top;
+    if(Math.abs(dx)>1||Math.abs(dy)>1){
+      el.style.transition='none';
+      el.style.transform=`translate(${dx}px,${dy}px)`;
+      requestAnimationFrame(()=>{
+        el.style.transition='transform .18s ease';
+        el.style.transform='';
+      });
+    }
+  });
+};
+const onWidgetGridDragOver=e=>{
+  if(dragWidgetId==null)return;
+  const wrap=document.getElementById('page-widgets');
+  if(!isWithinRect(e.clientX,e.clientY,wrap))return;
+  e.preventDefault();
+
+  const tabbed=pageTabs.length>0;
+  const widgetsToShow=(tabbed?pageWidgets.filter(w=>String(w.tab_id)===String(activeTabId)):pageWidgets)
+    .slice().sort((a,b)=>a.sort_order-b.sort_order);
+  const fromIdx=widgetsToShow.findIndex(w=>String(w.id)===String(dragWidgetId));
+  if(fromIdx<0)return;
+
+  const target=findWidgetDropTarget(e.clientX,e.clientY,widgetDragSnapshot);
+  const toIdx=resolveWidgetDropIndex(widgetsToShow,target);
+  const stack=!!target?.stack;
+
+  if(widgetDragPreview&&widgetDragPreview.index===toIdx&&widgetDragPreview.stack===stack)return; // unchanged, skip relayout
+  widgetDragPreview={index:toIdx,stack};
+
+  relayoutWidgetDOM(widgetsWithPreview(widgetsToShow,fromIdx,toIdx,stack));
 };
 const onWidgetGridDrop=async e=>{
   if(dragWidgetId==null)return;
@@ -1842,14 +1957,16 @@ const onWidgetGridDrop=async e=>{
   const fromIdx=widgetsToShow.findIndex(w=>String(w.id)===String(dragWidgetId));
   if(fromIdx<0)return;
   const draggedWidget=widgetsToShow[fromIdx];
-  const cardEls=[...wrap.querySelectorAll('.card:not(.widget-add-card)')];
-  const {index:toIdx,stack}=findWidgetDropTarget(e.clientX,e.clientY,cardEls);
+  const target=findWidgetDropTarget(e.clientX,e.clientY,widgetDragSnapshot);
+  const toIdx=resolveWidgetDropIndex(widgetsToShow,target);
+  const stack=!!target?.stack;
 
   const alwaysForced=draggedWidget.widget_type==='schedule'||draggedWidget.widget_type==='dashboard';
   const currentFullRow=!!draggedWidget.config?.fullRow;
   const newFullRow=alwaysForced?true:stack;
   const fullRowChanged=!alwaysForced&&currentFullRow!==newFullRow;
   const positionChanged=!(fromIdx===toIdx||fromIdx===toIdx-1);
+  widgetDragPreview=null;
   if(!positionChanged&&!fullRowChanged)return;
 
   const sorted=[...widgetsToShow];
