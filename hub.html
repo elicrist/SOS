@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EC OS</title>
+<title>SOS</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="EC OS">
+<meta name="apple-mobile-web-app-title" content="SOS">
 <meta name="theme-color" content="#0e0e0f">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -81,7 +81,7 @@ input{background:var(--surface);border:1px solid var(--border-light);color:var(-
 </head>
 <body>
 <header>
-  <div class="logo">EC OS <span id="hdr-owner"></span></div>
+  <div class="logo">SOS <span id="hdr-owner"></span></div>
   <div class="hdr-meta" id="hdr-date"></div>
 </header>
 <main>
@@ -127,7 +127,7 @@ input{background:var(--surface);border:1px solid var(--border-light);color:var(-
     </div>
   </div>
 </div>
-<footer>ec os · built summer 2026</footer>
+<footer>sos · built summer 2026</footer>
 <script src="public/auth.js"></script>
 <script>
 const today=new Date();today.setHours(0,0,0,0);
@@ -264,12 +264,18 @@ const HUB_STAT_EXTRACTORS={
     return {value:`${wins}-${matches.length-wins}`,label:'match record'};
   },
 };
-const HUB_STAT_PROMPT='<div class="os-cd"><div class="cd-prompt">Star a dashboard stat to feature it here</div></div>';
+const HUB_STAT_PROMPT_NONE='<div class="os-cd"><div class="cd-prompt">Star a dashboard stat to feature it here</div></div>';
+const HUB_STAT_PROMPT_EMPTY='<div class="os-cd"><div class="cd-prompt">No data logged yet</div></div>';
+// Two distinct empty states, not one: nothing favorited at all vs. a widget
+// IS favorited but genuinely has no data yet (e.g. a freshly-starred notes
+// or checklist widget with zero entries) are different situations and
+// shouldn't both read as "go star something" — the second one is already
+// wired up correctly and just needs its first log entry.
 const hubCardStatBlock=(widget,data)=>{
-  if(!widget)return HUB_STAT_PROMPT;
+  if(!widget)return HUB_STAT_PROMPT_NONE;
   const extractor=HUB_STAT_EXTRACTORS[widget.widget_type];
   const stat=extractor?extractor(widget.config||{},data):null;
-  if(!stat)return HUB_STAT_PROMPT;
+  if(!stat)return HUB_STAT_PROMPT_EMPTY;
   return `<div class="os-cd"><div class="cd-num">${stat.value}</div><div class="cd-label">${stat.label}</div></div>`;
 };
 // Fetches whichever widget is hub-starred (config.hubStarred===true — see

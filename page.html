@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EC OS</title>
+<title>SOS</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="EC OS">
+<meta name="apple-mobile-web-app-title" content="SOS">
 <meta name="theme-color" content="#0e0e0f">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -136,7 +136,8 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    the longest one silently clips against .os-sb's overflow:hidden instead
    of ever triggering its own scrollbar. */
 .os-sb.open #sb-pages{width:100%}
-.sb-toggle{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;color:var(--muted);font-size:18px;transition:all .15s;margin-bottom:6px;flex-shrink:0;background:none;border:none}
+.sb-toggle{width:32px;height:32px;display:flex;align-items:center;justify-content:center;gap:9px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:18px;transition:all .15s;margin-bottom:6px;flex-shrink:0;background:none;border:none;padding:0}
+.os-sb.open .sb-toggle{width:100%;justify-content:flex-start;padding:0 8px}
 .sb-toggle:hover{background:var(--faint);color:var(--text)}
 .sb-div{width:24px;height:1px;background:var(--border);margin:4px auto;flex-shrink:0;transition:width .2s}
 .os-sb.open .sb-div{width:100%}
@@ -180,7 +181,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 </head>
 <body>
 <div class="os-sb" id="os-sb">
-  <button class="sb-toggle" onclick="document.getElementById('os-sb').classList.toggle('open')">≡</button>
+  <button class="sb-toggle" onclick="document.getElementById('os-sb').classList.toggle('open')" aria-label="Toggle menu"><span>≡</span><span class="sb-label">Menu</span></button>
   <div class="sb-div"></div>
   <div id="sb-pages"></div>
   <div class="sb-footer">
@@ -454,18 +455,21 @@ const loadArchivedPages=async()=>{
     const rows=await sbFetchJson(`${SB_URL}/rest/v1/ec_pages?archived=eq.true&select=*&order=archived_at.desc`);
     if(!rows.length){listEl.innerHTML='';emptyEl.style.display='block';return;}
     emptyEl.style.display='none';
-    listEl.innerHTML=rows.map(r=>`
+    listEl.innerHTML=rows.map(r=>{
+      const safeName=String(r.name).replace(/"/g,'&quot;');
+      return `
       <div class="archive-row">
-        <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
           <span class="sb-dot" style="background:${r.dot_color||'var(--muted)'}"></span>
-          <div style="font-weight:600;color:var(--text)">${r.name}</div>
+          <div style="font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0" title="${safeName}">${safeName}</div>
         </div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;flex-shrink:0">
           <button class="btn btn-sm" onclick="unarchivePage(${r.id})">Unarchive</button>
           <button class="btn btn-sm btn-danger" onclick="deletePagePermanently(${r.id})">Delete Permanently</button>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }catch(e){
     console.error('loadArchivedPages failed',e);
     listEl.innerHTML='<div class="empty">Unable to load archived pages.</div>';
