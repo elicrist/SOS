@@ -122,17 +122,24 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 @media(max-width:720px){.grid-2,.grid-4{grid-template-columns:1fr}.widget-row{flex-direction:column}.content{padding:1rem}header{padding:.9rem 1rem;flex-wrap:wrap;row-gap:6px}.hdr-right{flex-wrap:wrap}}
 /* === OS SIDEBAR === */
 .os-sb{position:fixed;left:0;top:0;bottom:0;width:52px;background:var(--surface);border-right:1px solid var(--border);z-index:500;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;transition:width .2s ease;overflow:hidden}
-.os-sb.open{width:168px;align-items:flex-start;padding:14px 10px}
+.os-sb.open{width:var(--sb-open-width,168px);align-items:flex-start;padding:14px 10px}
+/* Without this, #sb-pages (no width of its own) shrink-wraps to its widest
+   child's natural content width in the cross axis, and every .sb-item's
+   width:100% then resolves against THAT instead of the sidebar's real
+   available width — so short names stretch to match the longest one, and
+   the longest one silently clips against .os-sb's overflow:hidden instead
+   of ever triggering its own scrollbar. */
+.os-sb.open #sb-pages{width:100%}
 .sb-toggle{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;color:var(--muted);font-size:18px;transition:all .15s;margin-bottom:6px;flex-shrink:0;background:none;border:none}
 .sb-toggle:hover{background:var(--faint);color:var(--text)}
 .sb-div{width:24px;height:1px;background:var(--border);margin:4px auto;flex-shrink:0;transition:width .2s}
 .os-sb.open .sb-div{width:100%}
 .sb-item{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--muted);padding:8px;border-radius:8px;transition:all .15s;width:36px;overflow:hidden;white-space:nowrap;flex-shrink:0}
-.os-sb.open .sb-item{width:148px;padding:9px 10px}
+.os-sb.open .sb-item{width:100%;padding:9px 10px;overflow-x:auto;scrollbar-width:thin}
 .sb-item:hover{background:var(--faint);color:var(--text)}
 .sb-item.active{color:var(--text);background:var(--faint)}
 .sb-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .15s;font-family:'DM Sans',sans-serif}
+.sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .15s;font-family:'DM Sans',sans-serif;flex-shrink:0}
 .os-sb.open .sb-label{opacity:1}
 .sb-footer{margin-top:auto;display:flex;flex-direction:column;gap:6px;width:100%}
 .sb-action{border:none;background:none;width:40px;height:40px;color:var(--text)}
@@ -333,10 +340,26 @@ const renderPagesSidebar=async()=>{
       const dotStyle=r.dot_color?`style="background:${r.dot_color}"`:'';
       return `<a class="sb-item${active}" href="${href}"><span class="sb-dot" ${dotStyle}></span><span class="sb-label">${r.name}</span></a>`;
     }).join('');
+    sizeSidebarToContent();
   }catch(e){
     console.error('renderPagesSidebar failed',e);
     container.innerHTML='<div class="empty" style="padding:0 12px">Unable to load sidebar pages.</div>';
   }
+};
+// Sidebar's open width tracks the longest current page name so names never
+// get silently clipped — it only grows up to a sane cap (SB_OPEN_MAX), past
+// which a single overlong name gets its own horizontal scrollbar (see
+// .os-sb.open .sb-item's overflow-x:auto) instead of stretching the whole
+// sidebar. Recomputed on every renderPagesSidebar call, so archiving/
+// unarchiving a page reflows this to the new longest remaining name.
+const SB_OPEN_MIN=168,SB_OPEN_MAX=280;
+const sizeSidebarToContent=()=>{
+  const sb=document.getElementById('os-sb');
+  const container=document.getElementById('sb-pages');
+  if(!sb||!container)return;
+  const widest=[...container.querySelectorAll('.sb-item')].reduce((m,el)=>Math.max(m,el.scrollWidth),0);
+  const target=Math.max(SB_OPEN_MIN,Math.min(SB_OPEN_MAX,widest));
+  sb.style.setProperty('--sb-open-width',`${target}px`);
 };
 // Click-outside-to-close: bound on the .overlay backdrop itself. Only fires
 // when the click target IS the backdrop (not a child), so clicks inside the
@@ -1915,10 +1938,12 @@ const onTabDragStart=(e,id)=>{
     const offsetX=e.clientX-rect.left;
     const offsetY=e.clientY-rect.top;
     tabDragGrab={offsetX,offsetY,width:rect.width,height:rect.height};
-    // No explicit setDragImage: the browser's default drag-image already
-    // anchors on this same grab point for a whole-button drag (unlike
-    // widget cards, whose only draggable element is a small handle icon,
-    // which would otherwise be all the browser shows).
+    // Explicit setDragImage, same as the widget engine: relayoutTabDOM moves
+    // the dragged tab's own element in the live DOM on every dragover tick
+    // (see below), which decouples the browser's default drag-image from its
+    // source element mid-gesture and lets the ghost drift outside the tab
+    // bar. A frozen snapshot image, grabbed once here, keeps it anchored.
+    try{ e.dataTransfer.setDragImage(btn,offsetX,offsetY); }catch(err){}
   }
   const bar=document.getElementById('page-tab-bar');
   tabDragSnapshot=bar?[...bar.querySelectorAll('.tab-btn:not(.tab-btn-dashboard)')]
@@ -2466,11 +2491,10 @@ const loadWidgets=async()=>{
   }
   await ensureDashboardTab();
   if(activeTabId==null){
-    // Land on the first real content tab, not Dashboard — pinning it first
-    // in the tab order doesn't mean forcing it as the default landing view.
-    // Falls back to Dashboard only when it's the sole tab (brand-new page).
-    const nonDashboard=[...pageTabs].filter(t=>!isDashboardTab(t)).sort((a,b)=>a.sort_order-b.sort_order);
-    activeTabId=nonDashboard[0]?.id??(pageTabs.find(isDashboardTab)?.id)??null;
+    // Always land on Dashboard first — it's the pinned overview tab, so a
+    // fresh page load (hub click, direct link, refresh) should never jump
+    // straight into whichever content tab happens to sort first.
+    activeTabId=pageTabs.find(isDashboardTab)?.id??pageTabs[0]?.id??null;
   }
   await Promise.all(pageWidgets.map(ensureWidgetData));
   renderTabBar();
