@@ -163,6 +163,11 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .os-sb.open .sb-item{width:100%;padding:9px 10px;overflow-x:auto;scrollbar-width:thin}
 .sb-item:hover{background:var(--faint);color:var(--text)}
 .sb-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+/* "You are here" cue for the currently-open page, independent of hover —
+   replaces the persistent gray box removed earlier. Slightly bigger + a
+   ring around the circumference, not a size/color that depends on the
+   page's own dot_color, so it stays legible against any dot color. */
+.sb-item.active .sb-dot{width:13px;height:13px;box-shadow:0 0 0 1.5px var(--text)}
 .sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .2s ease;font-family:'DM Sans',sans-serif;flex-shrink:0}
 .os-sb.open .sb-label{opacity:1}
 /* align-items:center matches how .os-sb itself centers the toggle/page-dot
