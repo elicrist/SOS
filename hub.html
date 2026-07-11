@@ -14,6 +14,7 @@
 :root{
   --bg:#0e0e0f;--surface:#161618;--card:#1c1c1f;--border:#2a2a2e;--border-light:#333338;
   --text:#f0ede8;--muted:#888880;--faint:#2a2a2e;
+  --accent:#B3A369;--danger:#e05b5b;
   --summer:#e07b4a;--summer-bg:#2e1a0e;
   --gt:#B3A369;--gt-bg:#1e1c0a;
   --mission:#9AAFBF;--mission-bg:#0f1a22;
@@ -53,7 +54,7 @@ main{flex:1;display:flex;flex-direction:column;align-items:center;justify-conten
 .s .cd-num{color:var(--summer)}.g .cd-num{color:var(--gt)}.m .cd-num{color:var(--mission)}
 .cd-label{font-size:10px;font-family:'DM Mono',monospace;color:var(--muted);margin-top:5px}
 .cd-prompt{font-size:11px;color:var(--muted);line-height:1.5}
-.os-open{margin-top:1.5rem;font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);transition:color .15s}
+.os-open{margin-top:1.5rem;font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);transition:color .15s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .os-card:hover .os-open{color:var(--text)}
 .hub-empty{display:flex;flex-direction:column;align-items:center;gap:1rem;padding:3rem 2rem;cursor:pointer;border:1px dashed var(--border-light);border-radius:14px;background:none;color:inherit;font-family:inherit;transition:all .2s;width:100%;max-width:420px;justify-self:center}
 .hub-empty:hover{border-color:var(--text);background:var(--card)}
@@ -61,12 +62,26 @@ main{flex:1;display:flex;flex-direction:column;align-items:center;justify-conten
 .hub-empty:hover .hub-empty-plus{color:var(--text)}
 .hub-empty-text{font-size:13px;color:var(--muted)}
 footer{padding:1rem 2rem;border-top:1px solid var(--border);font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;text-align:center}
+/* Minimal subset of page.html's overlay/field/button pattern (see
+   ecos-sidebar-pattern) — reused here instead of native prompt()/alert(),
+   which looked out of place and were called out directly. */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000;overscroll-behavior:contain}
+.overlay.active{display:flex}
+.overlay-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:1.5rem;max-width:420px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,.35)}
+.section-title{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:500;margin-bottom:.9rem}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
+input{background:var(--surface);border:1px solid var(--border-light);color:var(--text);font-family:'DM Mono',monospace;font-size:12px;padding:7px 10px;border-radius:7px;outline:none;width:100%}
+.btn{padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border-light);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent)}
+.fp-error{color:var(--danger);font-size:12px;margin-top:8px;display:none}
 @media(max-width:700px){.os-grid{grid-template-columns:1fr}main{justify-content:flex-start;padding-top:2rem}}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo">EC OS <span>/ Eli Crist</span></div>
+  <div class="logo">EC OS <span id="hdr-owner"></span></div>
   <div class="hdr-meta" id="hdr-date"></div>
 </header>
 <main>
@@ -98,7 +113,21 @@ footer{padding:1rem 2rem;border-top:1px solid var(--border);font-size:10px;color
     </a>
   </div>
 </main>
-<footer>ec os · elicrist · built summer 2026</footer>
+<div id="first-page-overlay" class="overlay" aria-hidden="true" onclick="closeOverlayIfBackdrop(event,closeFirstPageModal)">
+  <div class="overlay-card">
+    <div class="section-title" style="margin-bottom:1rem">Build your first page</div>
+    <div class="field">
+      <label>Page name</label>
+      <input type="text" id="fp-name" placeholder="e.g. Summer, Habits, Side Project" onkeydown="if(event.key==='Enter'){submitFirstPage();}else if(event.key==='Escape'){closeFirstPageModal();}">
+    </div>
+    <div class="fp-error" id="fp-error"></div>
+    <div style="display:flex;gap:8px;margin-top:1.25rem">
+      <button class="btn" style="flex:1" onclick="closeFirstPageModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" id="fp-create-btn" onclick="submitFirstPage()">Create page</button>
+    </div>
+  </div>
+</div>
+<footer>ec os · built summer 2026</footer>
 <script src="public/auth.js"></script>
 <script>
 const today=new Date();today.setHours(0,0,0,0);
@@ -112,6 +141,13 @@ const dM=days(MISSION);
 document.getElementById('cd-m').textContent=dM??'TBD';
 if(!dM)document.getElementById('cd-m-label').textContent='set date in Mission OS';
 document.getElementById('hdr-date').textContent=today.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+
+// Derived from the actual signed-in session, never a hardcoded name — this
+// used to say a specific person's name unconditionally, which leaked to
+// every other account (caught live on a genuinely empty second account).
+// authSession is populated synchronously from localStorage by public/auth.js
+// before this script runs, so no need to wait on the async initAuth() below.
+document.getElementById('hdr-owner').textContent=authSession?.user?.email?`/ ${authSession.user.email.split('@')[0]}`:'';
 
 // Single source for the hub greeting text — no real nickname/profile storage
 // exists yet (that's a future onboarding phase), so this is a generic
@@ -254,22 +290,59 @@ const fetchHubStat=async pageRow=>{
   }
 };
 
+// Click-outside-to-close, same pattern as page.html's overlays.
+const closeOverlayIfBackdrop=(event,closeFn)=>{ if(event.target===event.currentTarget) closeFn(); };
+
 // Lightweight page creation for the empty-state CTA — asks only for a name
 // (mirrors the sidebar's own addTab-style quick-prompt pattern) rather than
 // duplicating page.html's full 2-step builder overlay into this file. Once
 // this first page exists, its own sidebar "+ New page" covers the rest.
-const createFirstPage=async()=>{
-  const name=prompt('Name your first page:','My Page');
-  if(name===null)return;
-  const trimmed=name.trim()||'My Page';
+// dot_color is required — every other ec_pages insert in this codebase
+// (page.html/gt.html/mission.html's buildPage, migrate.html) always sets
+// it, and this was the one call site that didn't, which is why "Build your
+// first page" failed outright on a real empty account (confirmed by
+// comparing this against every other working insert; ec_pages.dot_color
+// has no default, so leaving it out fails the insert before it ever reaches
+// RLS). #B3A369 matches the first swatch in page.html's own PB_COLORS
+// palette, i.e. the same default a fresh page.html builder session would use.
+const FIRST_PAGE_DEFAULT_COLOR='#B3A369';
+const openFirstPageModal=()=>{
+  const overlay=document.getElementById('first-page-overlay');
+  if(!overlay)return;
+  document.getElementById('fp-name').value='';
+  document.getElementById('fp-error').style.display='none';
+  overlay.classList.add('active');
+  overlay.setAttribute('aria-hidden','false');
+  document.getElementById('fp-name').focus();
+};
+const closeFirstPageModal=()=>{
+  const overlay=document.getElementById('first-page-overlay');
+  if(!overlay)return;
+  overlay.classList.remove('active');
+  overlay.setAttribute('aria-hidden','true');
+};
+const submitFirstPage=async()=>{
+  const input=document.getElementById('fp-name');
+  const trimmed=input.value.trim();
+  if(!trimmed){
+    const err=document.getElementById('fp-error');
+    err.textContent='Page name is required.';
+    err.style.display='block';
+    return;
+  }
+  const btn=document.getElementById('fp-create-btn');
+  btn.disabled=true;btn.textContent='Creating…';
   try{
     const pageId=Date.now();
-    const resp=await fetch(`${SB_URL}/rest/v1/ec_pages`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({id:pageId,name:trimmed,sort_order:0,archived:false})});
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_pages`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({id:pageId,name:trimmed,dot_color:FIRST_PAGE_DEFAULT_COLOR,sort_order:0,archived:false})});
     if(!resp.ok) throw new Error(`Page insert failed ${resp.status}`);
     window.location.href=`page.html?id=${pageId}`;
   }catch(e){
-    console.error('createFirstPage failed',e);
-    alert('Failed to create page — try again.');
+    console.error('submitFirstPage failed',e);
+    const err=document.getElementById('fp-error');
+    err.textContent='Failed to create page — try again.';
+    err.style.display='block';
+    btn.disabled=false;btn.textContent='Create page';
   }
 };
 
@@ -317,7 +390,7 @@ const KNOWN_STATIC_CARDS={'index.html':'os-card-summer','gt.html':'os-card-gt','
     const visibleCards=[...document.querySelectorAll('#os-grid .os-card')].filter(el=>el.style.display!=='none');
     if(!visibleCards.length){
       document.getElementById('os-grid').innerHTML=`
-        <button class="hub-empty" onclick="createFirstPage()" aria-label="Build your first page">
+        <button class="hub-empty" onclick="openFirstPageModal()" aria-label="Build your first page">
           <div class="hub-empty-plus">+</div>
           <div class="hub-empty-text">Build your first page to get started</div>
         </button>`;
