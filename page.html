@@ -169,7 +169,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    switch anyway: every direct child here (toggle, .sb-div, #sb-pages,
    .sb-footer) already becomes width:100% when open, at which point
    centering a full-width box is visually identical to left-aligning it. */
-.os-sb{position:fixed;left:0;top:0;bottom:0;width:52px;background:var(--surface);border-right:1px solid var(--border);z-index:500;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;transition:width .2s ease;overflow:hidden}
+.os-sb{position:fixed;left:0;top:0;bottom:0;width:52px;background:var(--surface);border-right:1px solid var(--border);z-index:500;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;transition:width .2s ease,padding .2s ease;overflow:hidden}
 .os-sb.open{width:var(--sb-open-width,168px);padding:14px 10px}
 /* Without this, #sb-pages (no width of its own) shrink-wraps to its widest
    child's natural content width in the cross axis, and every .sb-item's
@@ -208,8 +208,21 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    ring around the circumference, not a size/color that depends on the
    page's own dot_color, so it stays legible against any dot color. */
 .sb-item.active .sb-dot{width:13px;height:13px;box-shadow:0 0 0 1.5px var(--text)}
-.sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .2s ease;font-family:'DM Sans',sans-serif;flex-shrink:0}
-.os-sb.open .sb-label{opacity:1}
+/* max-width (not width) is what actually animates here — width can't
+   transition smoothly to/from its "auto" content size (a hard CSS
+   limitation), so the collapsed state used to force width:0 with NO
+   transition at all, meaning the label's box popped to full size in a
+   single frame while only its opacity eased in underneath — the real
+   source of the reported "blocky/sudden" reveal. The open-state target is
+   tied to --sb-open-width (the same variable .os-sb's own width animates
+   toward) rather than a generous flat constant — an oversized flat target
+   (tried 400px first) made the label's own max-width transition complete
+   well before the container's width transition did, since an ease curve
+   reaches a much-larger-than-needed target's midpoint quickly; scaling
+   with --sb-open-width keeps the label's reveal running the full .2s in
+   step with the sidebar's own growth instead of finishing early. */
+.sb-label{font-size:12px;font-weight:500;opacity:0;transition:opacity .2s ease,max-width .2s ease;font-family:'DM Sans',sans-serif;flex-shrink:0;max-width:0;overflow:hidden;white-space:nowrap}
+.os-sb.open .sb-label{opacity:1;max-width:calc(var(--sb-open-width, 168px) - 40px)}
 /* align-items:center matches how .os-sb itself centers the toggle/page-dot
    items directly — without it, .sb-footer's explicit-width children fall
    back to flex-start (since a fixed width defeats the default stretch),
@@ -235,7 +248,6 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    box" look, not the box's left position. */
 .os-sb:not(.open) .sb-toggle{height:36px;justify-content:center;gap:0}
 .os-sb:not(.open) .sb-item{justify-content:center;gap:0}
-.os-sb:not(.open) .sb-label{width:0;margin:0}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000;overscroll-behavior:contain}
 .overlay.active{display:flex}
 .overlay-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:1.5rem;max-width:520px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,.35);overscroll-behavior:contain}
@@ -246,7 +258,15 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    equivalent for the plain 2-child case (label, hcheck) but also leaves
    room for an optional leading drag handle (3 children) without the
    label drifting off-center. */
-.set-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--faint)}
+/* user-select:none stands here unconditionally rather than relying only on
+   the JS-toggled .drag-active class (see onTypePointerDown): that class
+   only gets added once pointer movement crosses the drag threshold, so the
+   first few px of a drag gesture had no protection yet and could already
+   anchor a native text selection on a row's label/sub text, which then kept
+   extending as the pointer moved even after .drag-active was applied a
+   moment later — confirmed via screenshot showing selection highlight on
+   other rows during a drag. */
+.set-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--faint);user-select:none}
 .set-row:last-child{border-bottom:none}
 .set-row.dragging{opacity:.4}
 .set-row-info{flex:1;min-width:0}
@@ -2155,7 +2175,7 @@ const renderDashboardTabContent=wrap=>{
   const dashCardHtml=w=>{
     const starred=!!w.config?.hubStarred;
     return `
-    <div class="card size-${widgetSize(w)}" id="widget-card-${w.id}">
+    <div class="card size-${widgetDashboardSize(w)}" id="widget-card-${w.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">
           <span class="widget-drag-handle" id="widget-handle-${w.id}" draggable="true" ondragstart="onWidgetDragStart(event,${w.id})" ondragend="onWidgetDragEnd(event)" onclick="openWidgetSizeMenu(event,${w.id})" aria-label="Reorder or resize dashboard card" title="Drag to reorder, click to resize">⠿</span>
@@ -2166,7 +2186,7 @@ const renderDashboardTabContent=wrap=>{
       <div id="dash-summary-${w.id}"></div>
     </div>`;
   };
-  const rows=computeWidgetRows(favorited);
+  const rows=computeWidgetRows(favorited,widgetDashboardSize);
   wrap.innerHTML=rows.map(row=>`<div class="widget-row">${row.map(dashCardHtml).join('')}</div>`).join('');
   favorited.forEach(w=>{
     const renderer=WIDGET_SUMMARY_RENDERERS[w.widget_type];
@@ -2175,13 +2195,13 @@ const renderDashboardTabContent=wrap=>{
   });
 };
 
-// Each widget has an effective size of 'small' | 'half' | 'full'. schedule
-// is always 'full' regardless of anything else (unchanged from before). An
-// explicit config.size (set via the size picker — see openWidgetSizeMenu)
-// always wins otherwise; config.fullRow is the legacy flag the drag-stack
-// gesture (dragging onto the bottom quarter of another card, see
-// onWidgetGridDrop) still sets, consulted only when config.size hasn't
-// been explicitly chosen yet, so a widget dragged into a size-picker
+// Each widget has an effective size of 'small' | 'quarter' | 'half' | 'full'.
+// schedule is always 'full' regardless of anything else (unchanged from
+// before). An explicit config.size (set via the size picker — see
+// openWidgetSizeMenu) always wins otherwise; config.fullRow is the legacy
+// flag the drag-stack gesture (dragging onto the bottom quarter of another
+// card, see onWidgetGridDrop) still sets, consulted only when config.size
+// hasn't been explicitly chosen yet, so a widget dragged into a size-picker
 // choice doesn't get silently overridden by a stale drag-stack flag.
 const widgetSize=w=>{
   if(w.widget_type==='schedule')return 'full';
@@ -2189,36 +2209,39 @@ const widgetSize=w=>{
   if(w.config?.fullRow)return 'full';
   return 'half';
 };
+// The Dashboard summary card's size is deliberately a SEPARATE piece of
+// state (config.dashboardSize) from the widget's own tab size
+// (config.size/widgetSize above) — resizing a widget on its home tab must
+// have zero effect on its Dashboard card, and vice versa. Same fallback
+// shape as widgetSize otherwise (schedule forced full, default half).
+const widgetDashboardSize=w=>{
+  if(w.widget_type==='schedule')return 'full';
+  if(w.config?.dashboardSize)return w.config.dashboardSize;
+  return 'half';
+};
 // Widgets are laid out as a sequence of rows, not a fixed-column grid.
-// 'full' gets its own full-width row. 'half' greedily pairs consecutive
-// half widgets two per row (a lone one gets a full-width row to itself —
-// but still renders at half-width, not full, thanks to .card.size-half's
-// own fixed basis rather than a bare flex:1; see the CSS comment). 'small'
-// and 'quarter' widgets are each grouped by consecutive run of the SAME
-// size into a single row that wraps via flex-wrap (see .widget-row/
-// .card.size-small/.card.size-quarter CSS) — however many fit per line is
-// left to the browser based on available width, rather than a hardcoded
-// per-row count. A 'small' run and a 'quarter' run never share a row even
-// if adjacent, since mixing two different fixed bases in one wrapping row
-// would look inconsistent.
-const computeWidgetRows=widgets=>{
+// 'full' gets its own full-width row. Every OTHER size (small/quarter/half)
+// just gets grouped into ONE shared row array between 'full' boundaries —
+// genuinely mixed sizes (a quarter next to a half, two quarters plus a
+// half, etc.) are free to sit together because the actual packing is left
+// entirely to CSS flex-wrap (.widget-row) using each card's own fixed basis
+// (.card.size-small/.size-quarter/.size-half); the browser wraps to a new
+// line the moment real cumulative width exceeds the row, based on each
+// widget's true rendered width — not a same-size-only matching rule here.
+// sizeOf is injectable so callers can compute rows against a DIFFERENT
+// notion of "size" — the Dashboard tab passes widgetDashboardSize instead
+// of the default widgetSize, since its cards are sized independently.
+const computeWidgetRows=(widgets,sizeOf=widgetSize)=>{
   const rows=[];
   let i=0;
   while(i<widgets.length){
     const w=widgets[i];
-    const size=widgetSize(w);
-    if(size==='full'){ rows.push([w]); i+=1; continue; }
-    if(size==='small'||size==='quarter'){
-      const group=[w];
-      let j=i+1;
-      while(j<widgets.length&&widgetSize(widgets[j])===size){ group.push(widgets[j]); j+=1; }
-      rows.push(group);
-      i=j;
-      continue;
-    }
-    const next=widgets[i+1];
-    if(next&&widgetSize(next)==='half'){ rows.push([w,next]); i+=2; }
-    else{ rows.push([w]); i+=1; }
+    if(sizeOf(w)==='full'){ rows.push([w]); i+=1; continue; }
+    const group=[w];
+    let j=i+1;
+    while(j<widgets.length&&sizeOf(widgets[j])!=='full'){ group.push(widgets[j]); j+=1; }
+    rows.push(group);
+    i=j;
   }
   return rows;
 };
@@ -2615,16 +2638,22 @@ const renderWidgetSizePortal=()=>{
   const anchor=document.getElementById(`widget-handle-${widgetSizeMenuId}`);
   if(!w||!anchor){portal.innerHTML='';return;}
   const r=anchor.getBoundingClientRect();
-  const current=widgetSize(w);
+  const current=onDashboardTabActive()?widgetDashboardSize(w):widgetSize(w);
   portal.innerHTML=`
     <div class="tab-edit-panel" style="position:fixed;top:${r.bottom+4}px;left:${r.left}px">
       ${WIDGET_SIZE_OPTIONS.map(opt=>`<button class="widget-size-option${opt.value===current?' sel':''}" onclick="setWidgetSize(${w.id},'${opt.value}')" aria-label="${opt.label}" title="${opt.label}">${WIDGET_SIZE_ICONS[opt.value]}<span>${opt.label}</span>${opt.value===current?'<span class="widget-size-check">✓</span>':''}</button>`).join('')}
     </div>`;
 };
+// Which config key gets written depends on which tab the size menu was
+// opened FROM (see onDashboardTabActive) — the Dashboard's own size picker
+// must never touch config.size, or resizing a Dashboard card would leak
+// back into the widget's home-tab layout, defeating the whole point of
+// having two independent size fields.
 const setWidgetSize=async(id,size)=>{
   const w=findWidget(id);
   if(!w)return;
-  const newConfig={...(w.config||{}),size};
+  const sizeKey=onDashboardTabActive()?'dashboardSize':'size';
+  const newConfig={...(w.config||{}),[sizeKey]:size};
   closeWidgetSizeMenu();
   w.config=newConfig; // optimistic — matches favorited/dashboardOrder's own pattern elsewhere
   renderWidgets();
@@ -2771,7 +2800,7 @@ const relayoutWidgetDOM=widgets=>{
   const cards=[...wrap.querySelectorAll('.card:not(.widget-add-card)')];
   const firstRects=new Map(cards.map(el=>[el.id,el.getBoundingClientRect()]));
 
-  const rows=computeWidgetRows(widgets);
+  const rows=computeWidgetRows(widgets,onDashboardTabActive()?widgetDashboardSize:widgetSize);
   rows.forEach((row,rowIdx)=>{
     let rowEl=wrap.children[rowIdx];
     if(!rowEl||!rowEl.classList.contains('widget-row')){
