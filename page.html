@@ -265,8 +265,13 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    anchor a native text selection on a row's label/sub text, which then kept
    extending as the pointer moved even after .drag-active was applied a
    moment later — confirmed via screenshot showing selection highlight on
-   other rows during a drag. */
-.set-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--faint);user-select:none}
+   other rows during a drag. -webkit-user-select/-webkit-touch-callout cover
+   Safari/iOS specifically: iOS's long-press "callout" (selection loupe +
+   Copy/Select menu) is a SEPARATE mechanism from the CSS Selection API and
+   isn't suppressed by plain user-select:none alone on WebKit — relevant
+   here since this app's own install instructions target Safari on both Mac
+   and iPhone. */
+.set-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--faint);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .set-row:last-child{border-bottom:none}
 .set-row.dragging{opacity:.4}
 .set-row-info{flex:1;min-width:0}
