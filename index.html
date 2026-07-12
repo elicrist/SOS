@@ -10,6 +10,12 @@
 <meta name="theme-color" content="#0e0e0f">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
+/* Enables the browser's native cross-fade between same-origin page
+   navigations (hub<->page<->gt/mission/index) — no JS needed. Degrades
+   to today's instant snap on browsers without support (e.g. Firefox).
+   Doesn't affect in-page interactions (tab switches, widget adds, etc.)
+   since those never trigger a real navigation. */
+@view-transition { navigation: auto; }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0e0e0f;--surface:#161618;--card:#1c1c1f;--border:#2a2a2e;--border-light:#333338;
