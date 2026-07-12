@@ -661,7 +661,7 @@ const renderPagesSidebarRows=()=>{
     // points at, so only genuinely dynamic (builder-created) pages get the
     // edit affordance — static ones (GT OS, Mission OS, etc.) stay
     // reorderable like any other page, just not editable here.
-    const editBtn=r.page_kind==='static'?'':`<button class="sb-item-edit" onclick="onPageEditClick(event,'${r.id}')" aria-label="Edit page" title="Edit page">${pencilIconSvg(20.7,23.4)}</button>`;
+    const editBtn=r.page_kind==='static'?'':`<button class="sb-item-edit" onclick="onPageEditClick(event,'${r.id}')" aria-label="Edit page" title="Edit page">${pencilIconSvg(10.42,15.70)}</button>`;
     return `<div class="sb-page-wrap" id="sb-page-wrap-${r.id}">
       <a class="sb-item${active}" href="${href}" draggable="false" onpointerdown="onPageItemPointerDown(event,'${r.id}')" onclick="onPageItemClick(event,'${r.id}')"><span class="sb-dot" ${dotStyle}></span><span class="sb-label">${r.name}</span></a>
       ${editBtn}
@@ -1248,7 +1248,23 @@ const patchWidgetConfig=async(id,newConfig)=>{
 // the only thing that varies per context — each caller's container sizes
 // the glyph differently (see the size-specific CSS rules alongside the
 // scribble/movetip keyframes).
-const pencilIconSvg=(w,h)=>`<svg width="${w}" height="${h}" viewBox="0 0 30 34" style="overflow:visible"><path class="trace-line" d="M27,36 L25,38 L25,35 L23,37 L23,34 L21,36 L21,33 L19,30" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="21" stroke-dashoffset="21"/><text class="pencil-tip" x="15.5" y="30.5" font-size="11" fill="currentColor" text-anchor="middle" style="transform-box:fill-box;transform-origin:83% 58%">✎</text></svg>`;
+//
+// viewBox is tightly cropped to the ✎ glyph's own ink bounding box
+// (measured via getBBox() at font-size 11: x=11.16 y=20.32 w=8.68 h=13.08),
+// NOT the reference file's original "0 0 30 34" — that box was mostly
+// empty space by design (room for the scribble to draw outward from a
+// glyph sitting near its bottom-left), which is fine in an isolated
+// preview but means a button that centers/auto-sizes on the whole SVG box
+// (ours all do, via flexbox align-items/justify-content:center) centers on
+// a box whose content is NOT centered within it — the glyph ends up
+// visibly pushed down-and-right. Cropping the viewBox to exactly the
+// glyph's bbox makes the glyph fill its own box edge-to-edge, so centering
+// the box now genuinely centers the glyph. The trace-line's coordinates
+// are unchanged and sit OUTSIDE this tighter viewBox (by design, same as
+// before) — overflow:visible on the svg still lets it draw there
+// unclipped on hover; only the RESTING glyph's box got tighter, not the
+// coordinate space itself.
+const pencilIconSvg=(w,h)=>`<svg width="${w}" height="${h}" viewBox="11.16 20.32 8.68 13.08" style="overflow:visible"><path class="trace-line" d="M27,36 L25,38 L25,35 L23,37 L23,34 L21,36 L21,33 L19,30" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="21" stroke-dashoffset="21"/><text class="pencil-tip" x="15.5" y="30.5" font-size="11" fill="currentColor" text-anchor="middle" style="transform-box:fill-box;transform-origin:83% 58%">✎</text></svg>`;
 const WIDGET_FAV_ICON_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round" aria-hidden="true"><path d="M6,3 L18,3 L18,21 L12,15 L6,21 Z"/></svg>';
 const toggleWidgetFavorite=async id=>{
   const w=findWidget(id);
@@ -2478,7 +2494,7 @@ const renderWidgets=()=>{
           <div class="section-title" id="widget-title-${w.id}" style="margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0" title="${(w.title||w.widget_type).replace(/"/g,'&quot;')}">${w.title||w.widget_type}</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button class="btn btn-sm widget-edit-btn" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">${pencilIconSvg(13,14.7)}</button>
+          <button class="btn btn-sm widget-edit-btn" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">${pencilIconSvg(8.68,13.08)}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteWidgetInstance(${w.id})" aria-label="Delete widget">×</button>
         </div>
       </div>
@@ -2521,7 +2537,7 @@ const renderTabBar=()=>{
         <button class="tab-btn${isActive?' active':''}" id="tab-btn-${t.id}"
           onpointerdown="onTabPointerDown(event,${t.id})"
           onclick="onTabClick(event,${t.id})">${t.name}</button>
-        <button class="tab-edit-toggle" onclick="toggleTabEdit(event,${t.id})" aria-label="Edit tab" title="Rename or delete tab">${pencilIconSvg(13,14.7)}</button>
+        <button class="tab-edit-toggle" onclick="toggleTabEdit(event,${t.id})" aria-label="Edit tab" title="Rename or delete tab">${pencilIconSvg(7.89,11.89)}</button>
       </div>
     </div>`;
   }).join('')
