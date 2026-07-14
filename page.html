@@ -23,19 +23,27 @@
   --bg:#0e0e0f;--surface:#161618;--card:#1c1c1f;--border:#2a2a2e;--border-light:#333338;
   --text:#f0ede8;--muted:#888880;--faint:#2a2a2e;
   --accent:#B3A369;
-  /* Fixed, never overridden by showPageContent()'s per-page dot_color —
-     for chrome that belongs to the app, not to whichever page happens to be
-     open (e.g. the page-builder's "Build page" button). TODO: once app-wide
-     accent-color theming exists (separate planned feature), retire this and
-     point that chrome at the app-wide accent instead of this hardcode. */
+  /* Never overridden by showPageContent()'s per-page dot_color — for chrome
+     that belongs to the app, not to whichever page happens to be open (e.g.
+     the page-builder's "Build page" button). Set dynamically from the
+     user's chosen Appearance accent (see the flash-prevention script right
+     after this style block, and applyTheme() further down) — the value
+     here is just the fallback before that script runs. */
   --accent-default:#B3A369;
-  --ok:#5cb87a;--ok-bg:#0e261a;--danger:#e05b5b;--blue:#5b8dee;
+  --ok:#5fb27b;--ok-bg:#0e261a;--danger:#e05b5b;--blue:#5b8dee;
+}
+/* Light mode: only the neutrals change — --accent/--accent-default/--ok/
+   --danger/--blue stay the same in both modes (semantic/brand colors, not
+   surface colors), matching the mockup's minimal theme split. */
+[data-theme="light"]{
+  --bg:#f4f4f2;--surface:#ffffff;--card:#ffffff;--border:#e2e0da;--border-light:#d3d0c8;
+  --text:#1a1a18;--muted:#6b6a63;--faint:#ece9e2;
 }
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;flex-direction:column;padding-left:52px}
 /* gap is a hard floor between the title and the right-side controls (~1/6
    viewport width) — a long page name wraps and/or shrinks to make room (see
    .logo below) instead of ever overflowing the header horizontally. */
-header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:16.666vw}
+header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);box-shadow:0 1px 12px -2px color-mix(in srgb,var(--accent-default) 35%,transparent);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:16.666vw}
 .logo{font-size:17px;font-weight:600;letter-spacing:-.4px;min-width:0;overflow-wrap:break-word}
 .hdr-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .hdr-meta{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
@@ -63,11 +71,11 @@ header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);display:flex;al
 .widget-row>.card.size-small{flex:0 1 200px;max-width:200px}
 .widget-row>.card.size-quarter{flex:0 1 calc(25% - 12px);max-width:calc(25% - 12px)}
 .widget-row>.card.size-half{flex:0 1 calc(50% - 8px);max-width:calc(50% - 8px)}
-.tab-bar{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
+.tab-bar{display:flex;border-bottom:1px solid var(--border);box-shadow:0 1px 12px -2px color-mix(in srgb,var(--accent-default) 35%,transparent);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
 .tab-bar::-webkit-scrollbar{display:none}
 .tab-btn{padding:10px 18px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;font-family:'DM Sans',sans-serif}
 .tab-btn:hover{color:var(--text)}
-.tab-btn.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab-btn.active{color:var(--text);border-bottom-color:var(--accent);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--accent) 60%,transparent)}
 .tab-wrap.dragging{opacity:.4}
 .tab-wrap{display:flex;flex-direction:column;align-items:stretch;flex-shrink:0;position:relative}
 /* Custom pointer-drag (tabs, and now the sidebar page list + widget-type
@@ -123,7 +131,7 @@ select option{background:var(--surface)}
 textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .btn{padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border-light);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
-.btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent)}
+.btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent);box-shadow:0 0 16px -3px color-mix(in srgb,var(--accent) 45%,transparent)}
 /* Bug fix: these two buttons live inside the page-builder overlay, which can
    be opened from any page — they were picking up that page's own accent
    color via .btn-primary's var(--accent) instead of a fixed app color.
@@ -133,7 +141,13 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    settings, etc.) and correctly should keep inheriting var(--accent) — only
    these two are page-agnostic app chrome. See --accent-default in :root for
    the TODO on app-wide theming. */
-#pb-next-btn,#pb-build-btn{background:color-mix(in srgb,var(--accent-default) 14%,var(--card));border-color:var(--accent-default);color:var(--accent-default)}
+#pb-next-btn,#pb-build-btn{background:color-mix(in srgb,var(--accent-default) 14%,var(--card));border-color:var(--accent-default);color:var(--accent-default);box-shadow:0 0 16px -3px color-mix(in srgb,var(--accent-default) 45%,transparent)}
+.theme-mode-btn{flex:1;padding:9px 10px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border-light);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;transition:all .15s}
+.theme-mode-btn:hover{border-color:var(--accent-default);color:var(--accent-default)}
+.theme-mode-btn.active{background:color-mix(in srgb,var(--accent-default) 16%,var(--card));border-color:var(--accent-default);color:var(--accent-default)}
+.theme-swatch-input{width:44px;height:44px;border:none;border-radius:8px;cursor:pointer;background:none;padding:0;box-shadow:0 0 12px -2px color-mix(in srgb,var(--accent-default) 45%,transparent)}
+.theme-preview-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--accent-default)}
+.theme-preview-divider{height:1px;background:color-mix(in srgb,var(--accent-default) 40%,var(--border));box-shadow:0 0 6px -1px color-mix(in srgb,var(--accent-default) 50%,transparent);margin:12px 0}
 /* Same bug, same fix: the page-builder's own step-1 fields (name/timeframe/
    location) were inheriting the generic input:focus{border-color:var(
    --accent)} rule below, so their focus outline also flashed whichever
@@ -186,7 +200,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
 .sb-toggle{width:36px;height:36px;display:flex;align-items:center;justify-content:center;gap:9px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:18px;transition:all .2s ease;margin-bottom:6px;flex-shrink:0;background:none;border:none;padding:0}
 .os-sb.open .sb-toggle{width:100%;justify-content:flex-start;padding:0 8px}
 .sb-toggle:hover{background:var(--faint);color:var(--text)}
-.sb-div{width:24px;height:1px;background:var(--border);margin:4px auto;flex-shrink:0;transition:width .2s}
+.sb-div{width:24px;height:1px;background:color-mix(in srgb,var(--accent-default) 40%,var(--border));box-shadow:0 0 6px -1px color-mix(in srgb,var(--accent-default) 50%,transparent);margin:4px auto;flex-shrink:0;transition:width .2s}
 .os-sb.open .sb-div{width:100%}
 /* .sb-page-wrap owns the sizing (width/height) that .sb-item used to own
    directly — needed once an edit button sits alongside the item, so the
@@ -486,6 +500,29 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
   }
 }
 </style>
+<script>
+// Applied synchronously before first paint to avoid a flash of the wrong
+// theme (e.g. light-mode user briefly seeing dark on load). The fuller
+// theming logic — auto-mode's live re-check interval, and the Appearance
+// settings UI that writes these same localStorage keys — lives further
+// down with the rest of the app JS. Duplicated verbatim in hub.html and
+// index.html (same no-shared-module pattern as everything else here) so
+// every top-level page reflects the same theme independently.
+(function(){
+  var mode=localStorage.getItem('theme_mode')||'dark';
+  var visual=mode;
+  if(mode==='auto'){
+    var now=new Date();
+    var dt=(localStorage.getItem('theme_dark_time')||'20:00').split(':').map(Number);
+    var lt=(localStorage.getItem('theme_light_time')||'07:00').split(':').map(Number);
+    var nowMin=now.getHours()*60+now.getMinutes();
+    var darkMin=dt[0]*60+dt[1],lightMin=lt[0]*60+lt[1];
+    visual=darkMin>lightMin?(nowMin>=darkMin||nowMin<lightMin?'dark':'light'):(nowMin>=darkMin&&nowMin<lightMin?'dark':'light');
+  }
+  document.documentElement.setAttribute('data-theme',visual);
+  document.documentElement.style.setProperty('--accent-default',localStorage.getItem('theme_accent')||'#B3A369');
+})();
+</script>
 </head>
 <body>
 <div class="os-sb" id="os-sb">
@@ -517,6 +554,46 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
       <div class="set-row">
         <div class="set-label" id="set-auth-status">Not signed in</div>
         <button class="btn btn-sm" id="set-signout-btn" onclick="signOut()" style="display:none">Sign out</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="section-title">appearance</div>
+      <div class="set-sub" style="margin-bottom:8px">mode</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button type="button" class="theme-mode-btn" id="theme-mode-btn-light" onclick="setThemeMode('light')">Light</button>
+        <button type="button" class="theme-mode-btn" id="theme-mode-btn-dark" onclick="setThemeMode('dark')">Dark</button>
+        <button type="button" class="theme-mode-btn" id="theme-mode-btn-auto" onclick="setThemeMode('auto')">Auto</button>
+      </div>
+      <div class="form-row" id="theme-auto-times" style="display:none">
+        <div class="field"><label>switch to dark at</label><input type="time" id="theme-dark-time" onchange="onThemeTimeChange()"></div>
+        <div class="field"><label>switch to light at</label><input type="time" id="theme-light-time" onchange="onThemeTimeChange()"></div>
+      </div>
+      <div class="set-sub" style="margin:16px 0 8px">accent color</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <input type="color" id="theme-accent-spectrum" class="theme-swatch-input" oninput="onThemeAccentSpectrum(this.value)">
+        <div class="field" style="flex:1"><label>hex code</label><input type="text" id="theme-accent-hex" maxlength="7" placeholder="#B3A369" oninput="onThemeAccentHex(this.value)"></div>
+      </div>
+      <div class="set-sub" style="margin:20px 0 8px">live preview</div>
+      <!-- --accent overridden to --accent-default for this whole panel: every
+           element inside (tab-btn.active, btn-primary) normally reads the
+           PAGE-level --accent, which would make this preview show whichever
+           page you happened to open Settings from instead of the global
+           theme accent actually being configured here. -->
+      <div class="card" style="background:var(--surface);--accent:var(--accent-default)">
+        <div class="card" style="margin-bottom:12px;box-shadow:0 0 20px -4px color-mix(in srgb,var(--accent-default) 55%,transparent)">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Page card glow</div>
+          <div style="font-size:14px;font-weight:600">Summer</div>
+        </div>
+        <div style="display:flex;gap:14px;margin-bottom:12px">
+          <div class="tab-btn" style="padding:6px 0">Dashboard</div>
+          <div class="tab-btn active" style="padding:6px 0">Main</div>
+        </div>
+        <button type="button" class="btn btn-primary" style="width:100%;margin-bottom:12px">Add widget</button>
+        <div class="theme-preview-divider"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="theme-preview-dot"></div>
+          <span style="font-size:12px;color:var(--muted)">Sample link text</span>
+        </div>
       </div>
     </div>
     <div style="margin-bottom:1rem">
@@ -933,6 +1010,93 @@ const openArchiveOverlay=()=>{const overlay=document.getElementById('archive-ove
 const closeArchiveOverlay=()=>{const overlay=document.getElementById('archive-overlay');if(!overlay)return;overlay.classList.remove('active');overlay.setAttribute('aria-hidden','true');};
 const openSettingsOverlay=()=>{const overlay=document.getElementById('settings-overlay');if(!overlay)return;overlay.classList.add('active');overlay.setAttribute('aria-hidden','false');loadSettingsOverlay();};
 const closeSettingsOverlay=()=>{const overlay=document.getElementById('settings-overlay');if(!overlay)return;overlay.classList.remove('active');overlay.setAttribute('aria-hidden','true');};
+
+// --- Appearance theming ---
+// mode/darkTime/lightTime/accent all live in localStorage (a personal
+// device preference, not page/widget data, same reasoning as
+// WIDGET_TYPE_ORDER_KEY) so they're read directly rather than through
+// GS/SS. The flash-prevention script in <head> (before <style> closes)
+// has its own tiny inline copy of the auto-mode math — it has to run
+// before this script block even loads to avoid a flash of the wrong
+// theme, so it can't call these. Keep the two in sync if this logic ever
+// changes.
+const THEME_DEFAULTS={mode:'dark',darkTime:'20:00',lightTime:'07:00',accent:'#B3A369'};
+const getThemeMode=()=>localStorage.getItem('theme_mode')||THEME_DEFAULTS.mode;
+const getThemeDarkTime=()=>localStorage.getItem('theme_dark_time')||THEME_DEFAULTS.darkTime;
+const getThemeLightTime=()=>localStorage.getItem('theme_light_time')||THEME_DEFAULTS.lightTime;
+const getThemeAccent=()=>localStorage.getItem('theme_accent')||THEME_DEFAULTS.accent;
+// Always evaluated against new Date()'s LIVE local hours/minutes — never a
+// stored/frozen timestamp — so a user who set 20:00/07:00 at home gets the
+// same 8pm/7am switch after flying to a new timezone, for free, since the
+// device clock (and therefore .getHours()) already reflects local time
+// wherever they are. darkMin>lightMin is the overnight-wraparound case
+// (e.g. dark at 20:00, light at 07:00 crosses midnight) — a plain range
+// check would get that backwards.
+const currentVisualMode=()=>{
+  const mode=getThemeMode();
+  if(mode!=='auto')return mode;
+  const now=new Date();
+  const [dh,dm]=getThemeDarkTime().split(':').map(Number);
+  const [lh,lm]=getThemeLightTime().split(':').map(Number);
+  const nowMin=now.getHours()*60+now.getMinutes();
+  const darkMin=dh*60+dm,lightMin=lh*60+lm;
+  if(darkMin>lightMin)return(nowMin>=darkMin||nowMin<lightMin)?'dark':'light';
+  return(nowMin>=darkMin&&nowMin<lightMin)?'dark':'light';
+};
+const applyTheme=()=>{
+  document.documentElement.setAttribute('data-theme',currentVisualMode());
+  document.documentElement.style.setProperty('--accent-default',getThemeAccent());
+  reflectThemeSettingsUI();
+};
+// Only touches elements that exist while the Appearance card is actually
+// in the DOM (it always is here — settings-overlay isn't torn down when
+// closed) — safe to call unconditionally from applyTheme() even before
+// the overlay's ever been opened once.
+const reflectThemeSettingsUI=()=>{
+  const mode=getThemeMode();
+  ['light','dark','auto'].forEach(m=>{
+    const btn=document.getElementById(`theme-mode-btn-${m}`);
+    if(btn) btn.classList.toggle('active',m===mode);
+  });
+  const timesRow=document.getElementById('theme-auto-times');
+  if(timesRow) timesRow.style.display=mode==='auto'?'flex':'none';
+  const darkTimeEl=document.getElementById('theme-dark-time');
+  const lightTimeEl=document.getElementById('theme-light-time');
+  if(darkTimeEl&&document.activeElement!==darkTimeEl) darkTimeEl.value=getThemeDarkTime();
+  if(lightTimeEl&&document.activeElement!==lightTimeEl) lightTimeEl.value=getThemeLightTime();
+  const accent=getThemeAccent();
+  const spectrum=document.getElementById('theme-accent-spectrum');
+  const hex=document.getElementById('theme-accent-hex');
+  if(spectrum&&document.activeElement!==spectrum) spectrum.value=accent;
+  if(hex&&document.activeElement!==hex) hex.value=accent.toUpperCase();
+};
+const setThemeMode=mode=>{
+  localStorage.setItem('theme_mode',mode);
+  applyTheme();
+};
+const onThemeTimeChange=()=>{
+  localStorage.setItem('theme_dark_time',document.getElementById('theme-dark-time').value||THEME_DEFAULTS.darkTime);
+  localStorage.setItem('theme_light_time',document.getElementById('theme-light-time').value||THEME_DEFAULTS.lightTime);
+  applyTheme();
+};
+const setThemeAccent=hex=>{
+  localStorage.setItem('theme_accent',hex);
+  applyTheme();
+};
+const onThemeAccentSpectrum=hex=>setThemeAccent(hex);
+// No contrast/safety validation on purpose — a deliberate call, not an
+// oversight: casual users picking a clashing accent is fine, and anyone
+// who cares enough to want contrast checking will pick sensibly anyway.
+const onThemeAccentHex=raw=>{ if(/^#[0-9A-Fa-f]{6}$/.test(raw)) setThemeAccent(raw); };
+// Re-checks every 30s so a tab left open through the auto-mode switch time
+// actually flips without needing a reload — cheap no-op the other 2 modes.
+setInterval(()=>{ if(getThemeMode()==='auto') applyTheme(); },30000);
+// Runs once immediately so the Appearance settings UI (mode buttons, time
+// inputs, color/hex fields) is already correctly populated the first time
+// someone opens it — data-theme/--accent-default themselves were already
+// set by the flash-prevention script in <head>, so this call's real job
+// here is reflectThemeSettingsUI(), not re-doing that part.
+applyTheme();
 const renderAuthStatus=()=>{
   const statusEl=document.getElementById('set-auth-status');
   const btn=document.getElementById('set-signout-btn');

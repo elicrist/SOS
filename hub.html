@@ -24,9 +24,17 @@
   --text:#f0ede8;--muted:#888880;--faint:#2a2a2e;
   --accent:#B3A369;--danger:#e05b5b;
   --summer:#e07b4a;--summer-bg:#2e1a0e;
+  /* App-wide theme accent, set from the user's Appearance choice (page.html
+     Settings) — see the flash-prevention script right after this style
+     block. Fallback here is only what shows before that script runs. */
+  --accent-default:#B3A369;
+}
+[data-theme="light"]{
+  --bg:#f4f4f2;--surface:#ffffff;--card:#ffffff;--border:#e2e0da;--border-light:#d3d0c8;
+  --text:#1a1a18;--muted:#6b6a63;--faint:#ece9e2;
 }
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;flex-direction:column}
-header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);box-shadow:0 1px 12px -2px color-mix(in srgb,var(--accent-default) 35%,transparent);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .logo{font-size:17px;font-weight:600;letter-spacing:-.4px}
 .logo span{color:var(--muted);font-weight:300}
 .hdr-meta{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
@@ -41,7 +49,13 @@ main{flex:1;display:flex;flex-direction:column;align-items:center;justify-conten
    dynamic cards set border-color inline — an inline border-color would beat
    the :hover rule below no matter how it's written, since inline style
    always outranks any stylesheet selector regardless of specificity. */
-.os-card{background:var(--card);border:1px solid var(--card-border,var(--border));border-radius:14px;padding:2rem 1.75rem;text-decoration:none;color:inherit;display:flex;flex-direction:column;transition:all .2s;min-width:0}
+/* Resting box-shadow is the NEW app-wide accent glow (uniform across every
+   card, always on) — deliberately separate from :hover below, which keeps
+   using each card's own --card-accent (per-page color). Adding both here
+   would fight each other; :hover wins on its own since it's declared after
+   this rule, so a hovered card's shadow fully replaces the resting one
+   rather than the two adding together. */
+.os-card{background:var(--card);border:1px solid var(--card-border,var(--border));border-radius:14px;padding:2rem 1.75rem;text-decoration:none;color:inherit;display:flex;flex-direction:column;transition:all .2s;min-width:0;box-shadow:0 0 20px -4px color-mix(in srgb,var(--accent-default) 45%,transparent)}
 /* --card-accent is set per card (from its own dot/accent color) so hover
    always matches THAT page's color — never a fixed app-wide one. Every
    card left today is dynamic and sets this inline; .s below is the one
@@ -79,10 +93,36 @@ footer{padding:1rem 2rem;border-top:1px solid var(--border);font-size:10px;color
 input{background:var(--surface);border:1px solid var(--border-light);color:var(--text);font-family:'DM Mono',monospace;font-size:12px;padding:7px 10px;border-radius:7px;outline:none;width:100%}
 .btn{padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border-light);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
-.btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent)}
+.btn-primary{background:color-mix(in srgb,var(--accent) 14%,var(--card));border-color:var(--accent);color:var(--accent);box-shadow:0 0 16px -3px color-mix(in srgb,var(--accent) 45%,transparent)}
 .fp-error{color:var(--danger);font-size:12px;margin-top:8px;display:none}
 @media(max-width:700px){.os-grid{grid-template-columns:1fr}main{justify-content:flex-start;padding-top:2rem}}
 </style>
+<script>
+// Applied synchronously before first paint to avoid a flash of the wrong
+// theme. Duplicated verbatim from page.html (same no-shared-module pattern
+// as everything else here) — see that file's copy for the fuller
+// explanation and the Appearance settings UI that writes these same
+// localStorage keys. hub.html has no per-page accent concept (it's a page
+// LISTING, not an individual page view), so unlike page.html it sets both
+// --accent and --accent-default to the same theme value rather than
+// keeping them distinct.
+(function(){
+  var mode=localStorage.getItem('theme_mode')||'dark';
+  var visual=mode;
+  if(mode==='auto'){
+    var now=new Date();
+    var dt=(localStorage.getItem('theme_dark_time')||'20:00').split(':').map(Number);
+    var lt=(localStorage.getItem('theme_light_time')||'07:00').split(':').map(Number);
+    var nowMin=now.getHours()*60+now.getMinutes();
+    var darkMin=dt[0]*60+dt[1],lightMin=lt[0]*60+lt[1];
+    visual=darkMin>lightMin?(nowMin>=darkMin||nowMin<lightMin?'dark':'light'):(nowMin>=darkMin&&nowMin<lightMin?'dark':'light');
+  }
+  document.documentElement.setAttribute('data-theme',visual);
+  var accent=localStorage.getItem('theme_accent')||'#B3A369';
+  document.documentElement.style.setProperty('--accent',accent);
+  document.documentElement.style.setProperty('--accent-default',accent);
+})();
+</script>
 </head>
 <body>
 <header>
@@ -116,6 +156,22 @@ input{background:var(--surface);border:1px solid var(--border-light);color:var(-
 <script>
 const today=new Date();today.setHours(0,0,0,0);
 document.getElementById('hdr-date').textContent=today.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+
+// Re-applies the auto-mode day/night switch against the LIVE local clock
+// every 30s, so a hub tab left open through the switch time actually
+// flips without needing a reload — cheap no-op in light/dark modes. See
+// the flash-prevention script above (and page.html's Appearance settings,
+// the only place these localStorage keys get written) for the full story.
+setInterval(()=>{
+  if((localStorage.getItem('theme_mode')||'dark')!=='auto')return;
+  const now=new Date();
+  const dt=(localStorage.getItem('theme_dark_time')||'20:00').split(':').map(Number);
+  const lt=(localStorage.getItem('theme_light_time')||'07:00').split(':').map(Number);
+  const nowMin=now.getHours()*60+now.getMinutes();
+  const darkMin=dt[0]*60+dt[1],lightMin=lt[0]*60+lt[1];
+  const visual=darkMin>lightMin?(nowMin>=darkMin||nowMin<lightMin?'dark':'light'):(nowMin>=darkMin&&nowMin<lightMin?'dark':'light');
+  document.documentElement.setAttribute('data-theme',visual);
+},30000);
 
 // Derived from the actual signed-in session, never a hardcoded name — this
 // used to say a specific person's name unconditionally, which leaked to
