@@ -182,7 +182,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    in-tab "Add widget" picker are deliberately NOT included here — both are
    genuine per-page actions (same category as widget settings), correctly
    keep inheriting the current page's own var(--accent). */
-#settings-overlay,#archive-overlay .overlay-card,#widget-kitchen-overlay .overlay-card,#delete-account-overlay .overlay-card{--accent:var(--accent-default)}
+#settings-overlay,#widget-kitchen-overlay,#archive-overlay .overlay-card,#delete-account-overlay .overlay-card{--accent:var(--accent-default)}
 /* Field-type palette hover/selected feedback — previously had none at all.
    Scoped (not a blanket .set-row:hover) since .set-row is reused by several
    genuinely page-scoped lists elsewhere that should keep var(--accent) as
@@ -212,7 +212,15 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
    classes ALONGSIDE these only on the specific render where GridStack.init
    is about to run; Gridstack's own injected inline styles then take over
    positioning for that element, superseding ours. */
-.wk-field-item-content{height:100%;padding:2px}
+/* grid-auto-rows gives implicit rows a floor matching Gridstack's own
+   56px cellHeight unit (Arrange uses the same unit) AND lets a row grow
+   past that floor when a field's real rendered content needs more — e.g. a
+   multi-select with several choices renders taller than one row; without
+   this, bare `auto` row-sizing plus min-height:100% below could still let
+   that field's true height be underestimated and overlap whatever the next
+   field's fixed grid-row line placement puts right after it. */
+.wk-field-grid{grid-auto-rows:minmax(56px,auto)}
+.wk-field-item-content{min-height:100%;padding:2px}
 .wk-arranging .wk-field-item-content{border:1px dashed var(--border-light);border-radius:7px;padding:6px}
 .wk-arrange-btn.on{background:color-mix(in srgb,var(--accent) 16%,var(--card));border-color:var(--accent);color:var(--accent)}
 .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 3px}
@@ -891,57 +899,71 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
     <div id="mwp-widget-types" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain"></div>
   </div>
 </div>
-<div id="widget-kitchen-overlay" class="overlay" aria-hidden="true" onclick="closeOverlayIfBackdrop(event,closeWidgetKitchen)">
-  <div class="overlay-card wide" style="display:flex;flex-direction:column;max-height:85vh">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-shrink:0">
-      <div class="section-title" id="wk-title" style="margin:0">Widget Kitchen · step 1 of 2</div>
-      <button class="btn btn-sm" onclick="closeWidgetKitchen()">Close</button>
+<div id="widget-kitchen-overlay" class="fullscreen-view" aria-hidden="true">
+  <div class="fullscreen-view-header">
+    <button class="fullscreen-back-btn" onclick="closeWidgetKitchen()" aria-label="Back to page">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back
+    </button>
+    <div class="section-title" style="margin:0">Widget Kitchen</div>
+  </div>
+  <div class="fullscreen-view-body" style="display:flex;padding:0;overflow:hidden">
+    <div id="wk-template-panel" style="width:240px;flex-shrink:0;border-right:1px solid var(--border);padding:1.5rem 1rem;overflow-y:auto">
+      <button class="btn btn-primary" style="width:100%;margin-bottom:1rem" onclick="wkStartNewTemplate()">+ New template</button>
+      <div id="wk-template-list"></div>
+      <div class="empty" id="wk-template-list-empty" style="display:none">No templates yet.</div>
     </div>
-    <div id="wk-step1" style="display:flex;flex-direction:column;flex:1;min-height:0">
-      <div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain">
-        <div class="form-row"><div class="field" style="flex:1"><label id="wk-name-label">name</label><input type="text" id="wk-name" placeholder="e.g. Bench PR log" onchange="wkNameChanged()"></div></div>
-        <div class="form-row">
-          <div class="field" style="flex:1"><label>cadence</label>
-            <select id="wk-cadence" onchange="wkMetaChanged()"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="custom">Custom</option></select>
-          </div>
-          <div class="field" style="flex:1"><label>category</label>
-            <select id="wk-category" onchange="wkMetaChanged()"></select>
-          </div>
-        </div>
-      </div>
-      <div style="padding-top:.75rem;flex-shrink:0"><button class="btn btn-primary" style="width:100%" onclick="wkGoStep2()">Next: add fields</button></div>
-    </div>
-    <div id="wk-step2" style="display:none;flex-direction:column;flex:1;min-height:0">
-      <div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain">
-        <div id="wk-edit-fields-wrap" style="display:none">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-            <div class="section-title" style="margin:0">Fields</div>
-            <button class="btn btn-sm wk-arrange-btn" id="wk-arrange-btn" onclick="wkToggleArrange()">Arrange</button>
-          </div>
-          <div id="wk-arrange-error" style="color:var(--danger);font-size:11px;margin-bottom:.4rem"></div>
-          <div id="wk-arrange-grid-wrap" style="display:none"></div>
-          <div id="wk-edit-fields-list-wrap">
-            <div id="wk-edit-fields-live"></div>
-            <div id="wk-edit-fields-removed-section" style="display:none">
-              <div class="section-title" style="margin:1rem 0 .5rem">Removed fields</div>
-              <div id="wk-edit-fields-removed"></div>
+    <div style="flex:1;min-width:0;overflow-y:auto;padding:1.5rem 2rem">
+      <div class="empty" id="wk-editor-empty">Select a template on the left, or create a new one.</div>
+      <div id="wk-editor" style="display:none">
+        <div class="section-title" id="wk-title" style="margin-bottom:1rem">Widget Kitchen · step 1 of 2</div>
+        <div id="wk-step1" style="display:flex;flex-direction:column">
+          <div class="form-row"><div class="field" style="flex:1"><label id="wk-name-label">name</label><input type="text" id="wk-name" placeholder="e.g. Bench PR log" onchange="wkNameChanged()"></div></div>
+          <div class="form-row">
+            <div class="field" style="flex:1"><label>cadence</label>
+              <select id="wk-cadence" onchange="wkMetaChanged()"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="custom">Custom</option></select>
+            </div>
+            <div class="field" style="flex:1"><label>category</label>
+              <select id="wk-category" onchange="wkMetaChanged()"></select>
             </div>
           </div>
+          <div style="padding-top:.25rem"><button class="btn btn-primary" style="width:100%" onclick="wkGoStep2()">Next: add fields</button></div>
         </div>
-        <div id="wk-add-field-section">
-          <div class="section-title" style="margin-bottom:.5rem">Add a field</div>
-          <div id="wk-field-palette"></div>
-          <div id="wk-field-config"></div>
+        <div id="wk-step2" style="display:none;flex-direction:column">
+          <div id="wk-edit-fields-wrap" style="display:none">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:8px">
+              <div class="section-title" style="margin:0">Fields</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="wk-combine-select" style="width:auto;font-size:11px"></select>
+                <button class="btn btn-sm" onclick="wkCombineTemplates()">Combine</button>
+                <button class="btn btn-sm wk-arrange-btn" id="wk-arrange-btn" onclick="wkToggleArrange()">Arrange</button>
+              </div>
+            </div>
+            <div id="wk-arrange-error" style="color:var(--danger);font-size:11px;margin-bottom:.4rem"></div>
+            <div id="wk-arrange-grid-wrap" style="display:none"></div>
+            <div id="wk-edit-fields-list-wrap">
+              <div id="wk-edit-fields-live"></div>
+              <div id="wk-edit-fields-removed-section" style="display:none">
+                <div class="section-title" style="margin:1rem 0 .5rem">Removed fields</div>
+                <div id="wk-edit-fields-removed"></div>
+              </div>
+            </div>
+          </div>
+          <div id="wk-add-field-section">
+            <div class="section-title" style="margin-bottom:.5rem">Add a field</div>
+            <div id="wk-field-palette"></div>
+            <div id="wk-field-config"></div>
+          </div>
+          <div id="wk-create-fields-wrap">
+            <div class="section-title" style="margin:1rem 0 .5rem">Fields added</div>
+            <div id="wk-fields-list"></div>
+            <div id="wk-fields-empty" class="empty" style="display:none">No fields yet — pick a type above.</div>
+          </div>
+          <div style="display:flex;gap:8px;padding-top:.75rem">
+            <button class="btn" style="flex:1" onclick="wkBackStep1()">Back</button>
+            <button class="btn btn-primary" style="flex:1" id="wk-build-btn" onclick="wkBuildWidget()">Create widget</button>
+          </div>
         </div>
-        <div id="wk-create-fields-wrap">
-          <div class="section-title" style="margin:1rem 0 .5rem">Fields added</div>
-          <div id="wk-fields-list"></div>
-          <div id="wk-fields-empty" class="empty" style="display:none">No fields yet — pick a type above.</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;padding-top:.75rem;flex-shrink:0">
-        <button class="btn" style="flex:1" onclick="wkBackStep1()">Back</button>
-        <button class="btn btn-primary" style="flex:1" id="wk-build-btn" onclick="wkBuildWidget()">Create widget</button>
       </div>
     </div>
   </div>
@@ -1802,25 +1824,56 @@ const wkReset=()=>{
   document.getElementById('wk-step2').style.display='none';
   document.getElementById('wk-title').textContent='Widget Kitchen · step 1 of 2';
 };
-const openWidgetKitchen=()=>{
+// Widget Kitchen is a real page now (fullscreen-view, mirroring
+// #settings-overlay — see openSettingsOverlay), not a modal: this just
+// activates the view, refreshes the template list, and shows the empty
+// state. It does NOT auto-select create mode or any template — least
+// surprising default when there's already a list of templates to choose
+// from.
+const openWidgetKitchen=async()=>{
   const o=document.getElementById('widget-kitchen-overlay');
   if(!o)return;
   wkMode='create';
   wkEditingTemplateId=null;
-  wkReset();
+  document.getElementById('wk-editor').style.display='none';
+  document.getElementById('wk-editor-empty').style.display='block';
   o.classList.add('active');o.setAttribute('aria-hidden','false');
+  await mwpFetchMyTemplates();
+  renderWkTemplateList();
 };
-// Opened from a kitchen widget instance's "Edit template" button — resolves
-// to that instance's shared templateId, since structural editing now always
-// targets the template, never one instance's own row.
-const openWkTemplateEditor=widgetId=>{
-  const w=findWidget(widgetId);
-  if(!w||!w.config?.templateId)return;
-  const t=kitchenTemplatesById[w.config.templateId];
+const renderWkTemplateList=()=>{
+  const wrap=document.getElementById('wk-template-list');
+  const empty=document.getElementById('wk-template-list-empty');
+  if(!wrap||!empty)return;
+  const templates=mwpMyTemplates||[];
+  if(!templates.length){wrap.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  wrap.innerHTML=templates.map(t=>`
+    <div class="set-row${String(t.id)===String(wkEditingTemplateId)?' sel':''}" style="cursor:pointer">
+      <div class="set-row-info" onclick="wkSelectTemplate(${t.id})"><div class="set-label">${(t.name||'Untitled').replace(/"/g,'&quot;')}</div><div class="set-sub">${t.category||'Uncategorized'}</div></div>
+      <button class="del" onclick="event.stopPropagation();deleteKitchenTemplate(${t.id})" aria-label="Delete template">×</button>
+    </div>`).join('');
+};
+const wkStartNewTemplate=()=>{
+  wkMode='create';
+  wkEditingTemplateId=null;
+  wkReset();
+  document.getElementById('wk-editor-empty').style.display='none';
+  document.getElementById('wk-editor').style.display='block';
+  renderWkTemplateList();
+};
+// Selecting a template from the left panel loads it into the SAME editor
+// (step1+step2 markup, unchanged from Phase 3) that "+ New template" uses —
+// this replaces the old per-widget "Edit template" button entirely; there's
+// no other entry point into structural editing anymore.
+const wkSelectTemplate=templateId=>{
+  const t=kitchenTemplatesById[templateId];
   if(!t)return;
   wkMode='edit';
-  wkEditingTemplateId=w.config.templateId;
+  wkEditingTemplateId=templateId;
   wkPendingFieldType=null;wkePendingTypeChange=null;wkeArranging=false;
+  document.getElementById('wk-editor-empty').style.display='none';
+  document.getElementById('wk-editor').style.display='block';
   document.getElementById('wk-name-label').textContent='template name';
   document.getElementById('wk-name').value=t.name||'';
   document.getElementById('wk-cadence').value=t.cadence||'daily';
@@ -1829,6 +1882,7 @@ const openWkTemplateEditor=widgetId=>{
   document.getElementById('wk-field-config').innerHTML='';
   renderWkFieldPalette();
   renderWkEditFieldsBody();
+  renderWkCombineSelect();
   document.getElementById('wk-edit-fields-wrap').style.display='block';
   document.getElementById('wk-create-fields-wrap').style.display='none';
   document.getElementById('wk-add-field-section').style.display='block';
@@ -1839,12 +1893,11 @@ const openWkTemplateEditor=widgetId=>{
   if(arrangeBtn){arrangeBtn.disabled=false;arrangeBtn.textContent='Arrange';arrangeBtn.classList.remove('on');}
   const buildBtn=document.getElementById('wk-build-btn');
   buildBtn.textContent='Done';
-  buildBtn.onclick=closeWidgetKitchen;
+  buildBtn.onclick=()=>{document.getElementById('wk-editor').style.display='none';document.getElementById('wk-editor-empty').style.display='block';wkEditingTemplateId=null;renderWkTemplateList();};
   document.getElementById('wk-step1').style.display='flex';
   document.getElementById('wk-step2').style.display='none';
   document.getElementById('wk-title').textContent='Edit template · step 1 of 2';
-  const o=document.getElementById('widget-kitchen-overlay');
-  o.classList.add('active');o.setAttribute('aria-hidden','false');
+  renderWkTemplateList();
 };
 const closeWidgetKitchen=()=>{
   const o=document.getElementById('widget-kitchen-overlay');
@@ -1873,10 +1926,11 @@ const wkBuildWidget=async()=>{
     const dataResp=await fetch(`${SB_URL}/rest/v1/ec_widget_data`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({page_widget_id:widgetId,data:{entries:[]}})});
     if(!dataResp.ok) throw new Error(`Widget data insert failed ${dataResp.status}`);
     kitchenTemplatesById[templateId]=templateRow;
+    mwpMyTemplates=[...(mwpMyTemplates||[]),templateRow];
     pageWidgets.push({id:widgetId,page_id:pageId,widget_type:'kitchen',title:name,config,sort_order:pageWidgets.length,tab_id:activeTabId});
     widgetDataMap[widgetId]={page_widget_id:widgetId,data:{entries:[]}};
-    closeWidgetKitchen();
     renderWidgets();
+    wkSelectTemplate(templateId); // land in the new template's own editor rather than closing the page
   }catch(e){
     console.error('wkBuildWidget failed',e);
     alert('Failed to create widget.');
@@ -1922,6 +1976,85 @@ const wkPatchTemplateFields=async newFields=>{
   if(!resp.ok) throw new Error(`Template fields update failed ${resp.status}`);
   kitchenTemplatesById[wkEditingTemplateId]={...t,fields:newFields};
   wkRerenderTemplateInstances(wkEditingTemplateId);
+};
+// Combine — reactivated from the original (pre-Phase-3) Kitchen spec: pull
+// another template's fields into the one being edited. Simple field union
+// only, deliberately no smart/automatic merging — a name collision just
+// prompts for a rename of the INCOMING field; cancelling the prompt skips
+// that one field, not the whole combine.
+const renderWkCombineSelect=()=>{
+  const sel=document.getElementById('wk-combine-select');
+  if(!sel)return;
+  const others=(mwpMyTemplates||[]).filter(t=>String(t.id)!==String(wkEditingTemplateId));
+  if(!others.length){sel.innerHTML='<option value="">No other templates</option>';sel.disabled=true;return;}
+  sel.disabled=false;
+  sel.innerHTML=`<option value="">Combine with…</option>${others.map(t=>`<option value="${t.id}">${(t.name||'Untitled').replace(/"/g,'&quot;')}</option>`).join('')}`;
+};
+const wkCombineTemplates=async()=>{
+  const sel=document.getElementById('wk-combine-select');
+  const sourceId=sel&&sel.value;
+  if(!sourceId)return;
+  const source=(mwpMyTemplates||[]).find(t=>String(t.id)===String(sourceId));
+  const dest=kitchenTemplatesById[wkEditingTemplateId];
+  if(!source||!dest)return;
+  const now=new Date().toISOString();
+  const newFields=JSON.parse(JSON.stringify(dest.fields||[]));
+  for(const f of (source.fields||[]).filter(f=>!f.removed)){
+    let name=f.name;
+    if(newFields.some(nf=>!nf.removed&&nf.name===name)){
+      const renamed=prompt(`"${name}" already exists in this template — rename the incoming field:`,`${name} (2)`);
+      if(!renamed)continue; // cancel = skip just this field, not the whole combine
+      const trimmed=renamed.trim();
+      if(!trimmed)continue;
+      name=trimmed;
+    }
+    // Fresh id/typeHistory — the destination is a genuinely distinct
+    // template gaining a COPY of a field's current shape, not an alias into
+    // the source template (that would let an edit in one silently retype
+    // data in the other).
+    newFields.push({id:wkFieldId(),name,type:f.type,options:f.options,createdAt:now,typeHistory:[{type:f.type,options:f.options,activeFrom:now,activeUntil:null}],removed:false,removedAt:null});
+  }
+  try{await wkPatchTemplateFields(newFields);renderWkEditFieldsBody();}
+  catch(e){console.error('wkCombineTemplates failed',e);alert('Save failed — try again.');}
+  if(sel)sel.value='';
+};
+// Delete a template — available anytime, not gated on instance count. Every
+// instance currently referencing it gets the template's CURRENT fields/
+// category/cadence copied directly onto its own config (same field ids
+// preserved) and loses its templateId, becoming a fully self-contained
+// widget exactly like a pre-Phase-3 one — editable/loggable independently,
+// untouched by anything happening in Kitchen from that point on.
+const deleteKitchenTemplate=async templateId=>{
+  const t=kitchenTemplatesById[templateId]||(mwpMyTemplates||[]).find(x=>String(x.id)===String(templateId));
+  if(!t)return;
+  if(!confirm(`Delete template "${t.name}"? Every widget built from it keeps its current fields and data, but stops being linked to this template.`))return;
+  try{
+    // A template's instances can live on ANY of this owner's pages, not just
+    // the current one — fetch every kitchen widget (owner-scoped via RLS,
+    // same cross-page fetch shape mwpFetchMyTemplates/the old
+    // mwpFetchMyWidgets already used) and filter client-side, rather than
+    // needing a server-side jsonb-key filter for this scale.
+    const allKitchenWidgets=await sbFetchJson(`${SB_URL}/rest/v1/ec_page_widgets?widget_type=eq.kitchen&select=*`);
+    const affected=allKitchenWidgets.filter(w=>String(w.config?.templateId)===String(templateId));
+    for(const w of affected){
+      const newConfig={kitchen:true,category:t.category,cadence:t.cadence,fields:JSON.parse(JSON.stringify(t.fields||[]))};
+      const resp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets?id=eq.${w.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({config:newConfig})});
+      if(!resp.ok) throw new Error(`Sever failed for widget ${w.id}: ${resp.status}`);
+      const local=findWidget(w.id); // only set if this widget happens to be on the CURRENT page
+      if(local)local.config=newConfig;
+    }
+    const delResp=await fetch(`${SB_URL}/rest/v1/ec_kitchen_templates?id=eq.${templateId}`,{method:'DELETE',headers:buildHeaders()});
+    if(!delResp.ok) throw new Error(`Template delete failed ${delResp.status}`);
+    delete kitchenTemplatesById[templateId];
+    mwpMyTemplates=(mwpMyTemplates||[]).filter(x=>String(x.id)!==String(templateId));
+    if(String(wkEditingTemplateId)===String(templateId)){
+      wkEditingTemplateId=null;
+      document.getElementById('wk-editor').style.display='none';
+      document.getElementById('wk-editor-empty').style.display='block';
+    }
+    renderWkTemplateList();
+    pageWidgets.filter(w=>affected.some(a=>String(a.id)===String(w.id))).forEach(w=>renderWidgetById(w.id));
+  }catch(e){console.error('deleteKitchenTemplate failed',e);alert('Delete failed — try again.');}
 };
 const wkeTypeChangeConfirmHtml=f=>{
   const newType=wkePendingTypeChange.newType;
@@ -3516,7 +3649,12 @@ const kitchenFieldTypeAt=(field,loggedAt)=>{
   });
   return hit||field.typeHistory[field.typeHistory.length-1];
 };
-const kitchenFieldsFor=w=>kitchenTemplatesById[w.config?.templateId]?.fields||[];
+// Dual-mode: most kitchen widgets reference a shared template, but a widget
+// whose template was deleted (deleteKitchenTemplate) is severed back to a
+// fully self-contained pre-Phase-3 shape — config.fields directly, no
+// templateId — and must keep rendering/logging correctly with no template
+// in play at all.
+const kitchenFieldsFor=w=>w.config?.templateId?(kitchenTemplatesById[w.config.templateId]?.fields||[]):(w.config?.fields||[]);
 const kitchenLiveFields=w=>kitchenFieldsFor(w).filter(f=>!f.removed);
 // Default grid position for a field with no config.fields[].layout yet
 // (every widget built before Phase 2 shipped) — auto-stacked single column,
@@ -3665,14 +3803,20 @@ const kitchenRenderEntryValue=(field,entry)=>{
   return String(raw);
 };
 // Instance display only — no live GridStack here anymore (Phase 3): dragging
-// happens exclusively in the template editor (openWkTemplateEditor), since
-// layout is shared across every instance of a template. Each instance just
+// happens exclusively in the Kitchen page's template editor (wkSelectTemplate),
+// since layout is shared across every instance of a template. Each instance just
 // reads that shared field.layout and lays it out via plain CSS Grid at its
 // OWN column count (kitchenColumnsForWidget) — this is the same fallback
 // path Phase 2 already built for "Gridstack not loaded yet," now used
 // unconditionally as the only per-instance display path.
 function renderKitchenWidget(w){
   const body=document.getElementById(`widget-body-${w.id}`);
+  // A widget can be in `pageWidgets` without its card currently being
+  // mounted in the DOM — e.g. it's on a different tab than the active one.
+  // wkRerenderTemplateInstances/deleteKitchenTemplate re-render every
+  // instance of a template regardless of which tab it's on, so this must
+  // no-op gracefully rather than throw.
+  if(!body)return;
   const data=widgetDataMap[w.id].data||{};
   const entries=data.entries||[];
   const fields=kitchenFieldsFor(w);
@@ -4039,7 +4183,6 @@ const renderWidgets=()=>{
           <div class="section-title" id="widget-title-${w.id}" style="margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0" title="${(w.title||w.widget_type).replace(/"/g,'&quot;')}">${w.title||w.widget_type}</div>
         </div>
         <div style="display:flex;gap:6px">
-          ${w.widget_type==='kitchen'?`<button class="btn btn-sm" onclick="openWkTemplateEditor(${w.id})" aria-label="Edit template" title="Edit template">⤢</button>`:''}
           <button class="btn btn-sm widget-edit-btn" onclick="openWidgetSettings(${w.id})" aria-label="Edit widget settings">${pencilIconSvg(8.68,13.08)}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteWidgetInstance(${w.id})" aria-label="Delete widget">×</button>
         </div>
@@ -4807,7 +4950,7 @@ const mwpFetchMyTemplates=async()=>{
 const renderMwpTabs=()=>{
   const wrap=document.getElementById('mwp-tabs');
   if(!wrap)return;
-  wrap.innerHTML=MWP_TABS.map(t=>`<button type="button" class="btn btn-sm${t===mwpActiveTab?' btn-primary':''}" style="white-space:nowrap;flex-shrink:0" onclick="mwpSelectTab(${JSON.stringify(t)})">${t}</button>`).join('');
+  wrap.innerHTML=MWP_TABS.map(t=>`<button type="button" class="btn btn-sm${t===mwpActiveTab?' btn-primary':''}" style="white-space:nowrap;flex-shrink:0" onclick="mwpSelectTab('${t}')">${t}</button>`).join('');
 };
 const mwpSelectTab=t=>{mwpActiveTab=t;renderMwpTabs();renderMiniWidgetTypes();};
 // Clicking a "My Templates" row creates a new INSTANCE of that template —
@@ -4854,7 +4997,7 @@ const renderMiniWidgetTypes=()=>{
   const types=orderedWidgetTypeDefs().filter(w=>(w.category||'Uncategorized')===mwpActiveTab);
   if(!types.length){wrap.innerHTML='<div class="empty">No widget types in this category yet.</div>';return;}
   wrap.innerHTML=types.map(w=>`
-    <div class="set-row" onclick="addWidgetToTab('${w.type}',${JSON.stringify(w.label)})" style="cursor:pointer">
+    <div class="set-row" onclick="addWidgetToTab('${w.type}','${w.label}')" style="cursor:pointer">
       <div class="set-row-info"><div class="set-label">${w.label}</div><div class="set-sub">${w.sub}</div></div>
     </div>`).join('');
 };
