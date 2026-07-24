@@ -895,7 +895,7 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
       <div class="section-title" style="margin:0">Add widget to tab</div>
       <button class="btn btn-sm" onclick="closeMiniWidgetPicker()">Close</button>
     </div>
-    <div id="mwp-tabs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:.6rem;margin-bottom:.6rem;border-bottom:1px solid var(--border);flex-shrink:0"></div>
+    <div id="mwp-tabs" style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:.6rem;margin-bottom:.6rem;border-bottom:1px solid var(--border);flex-shrink:0"></div>
     <div id="mwp-widget-types" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain"></div>
   </div>
 </div>
@@ -930,6 +930,8 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
           <div style="padding-top:.25rem"><button class="btn btn-primary" style="width:100%" onclick="wkGoStep2()">Next: add fields</button></div>
         </div>
         <div id="wk-step2" style="display:none;flex-direction:column">
+          <div class="section-title" style="margin-bottom:.5rem">Preview</div>
+          <div id="wk-preview" style="pointer-events:none;margin-bottom:1.25rem"></div>
           <div id="wk-edit-fields-wrap" style="display:none">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:8px">
               <div class="section-title" style="margin:0">Fields</div>
@@ -1580,7 +1582,7 @@ const deletePagePermanently=async(id)=>{try{const rows=await sbFetchJson(`${SB_U
 // ═══ PAGE BUILDER ═══
 const WIDGET_TYPE_DEFS=[
   {type:'savings',label:'Savings',sub:'Track progress toward a savings goal',category:'Savings',defaultConfig:()=>({goal:1000,start:0})},
-  {type:'checklist',label:'Checklist',sub:'Simple checklist of items',category:'Uncategorized',defaultConfig:()=>({})},
+  {type:'checklist',label:'Checklist',sub:'Simple checklist of items',category:'To Do\'s',defaultConfig:()=>({})},
   {type:'habits',label:'Habit tracker',sub:'Daily habit tracker — one habit per widget',category:'Habits',defaultConfig:()=>({})},
   {type:'notes',label:'Notes',sub:'Freeform dated notes',category:'Notes',defaultConfig:()=>({})},
   {type:'schedule',label:'Schedule',sub:'Manually logged events',category:'Uncategorized',defaultConfig:()=>({})},
@@ -1784,6 +1786,7 @@ const wkConfirmAddField=async()=>{
 };
 const wkRemoveField=id=>{wkFields=wkFields.filter(f=>f.id!==id);renderWkFieldsList();};
 const renderWkFieldsList=()=>{
+  renderKitchenFieldsPreview(wkFields,4,document.getElementById('wk-preview'));
   const list=document.getElementById('wk-fields-list');
   const empty=document.getElementById('wk-fields-empty');
   if(!list||!empty)return;
@@ -1925,8 +1928,7 @@ const wkBuildWidget=async()=>{
     if(!resp.ok) throw new Error(`Widget insert failed ${resp.status}`);
     const dataResp=await fetch(`${SB_URL}/rest/v1/ec_widget_data`,{method:'POST',headers:buildHeaders(),body:JSON.stringify({page_widget_id:widgetId,data:{entries:[]}})});
     if(!dataResp.ok) throw new Error(`Widget data insert failed ${dataResp.status}`);
-    kitchenTemplatesById[templateId]=templateRow;
-    mwpMyTemplates=[...(mwpMyTemplates||[]),templateRow];
+    wkSyncTemplateInMemory(templateId,templateRow);
     pageWidgets.push({id:widgetId,page_id:pageId,widget_type:'kitchen',title:name,config,sort_order:pageWidgets.length,tab_id:activeTabId});
     widgetDataMap[widgetId]={page_widget_id:widgetId,data:{entries:[]}};
     renderWidgets();
@@ -1952,6 +1954,21 @@ let wkeArranging=false;
 let wkeGridInstance=null;
 const wkInstancesForTemplate=templateId=>pageWidgets.filter(w=>w.widget_type==='kitchen'&&String(w.config?.templateId)===String(templateId));
 const wkRerenderTemplateInstances=templateId=>{wkInstancesForTemplate(templateId).forEach(w=>renderWidgetById(w.id));};
+// Single choke point for "a template's data just changed." kitchenTemplatesById
+// (what actually renders fields on instances) and mwpMyTemplates (what the
+// Kitchen page's own left panel AND the picker's "My Templates" tab list
+// from) are two separate in-memory copies that previously only stayed in
+// sync via a full mwpFetchMyTemplates() refetch — every create/rename/
+// field-edit should go through this instead of writing kitchenTemplatesById
+// directly, or the list views go stale until the next reopen.
+const wkSyncTemplateInMemory=(templateId,updated)=>{
+  kitchenTemplatesById[templateId]=updated;
+  if(!mwpMyTemplates)mwpMyTemplates=[];
+  const idx=mwpMyTemplates.findIndex(t=>String(t.id)===String(templateId));
+  if(idx>=0)mwpMyTemplates[idx]=updated;
+  else mwpMyTemplates.push(updated);
+  renderWkTemplateList(); // no-ops safely if the panel isn't currently mounted
+};
 const wkNameChanged=()=>{if(wkMode==='edit')wkSaveTemplateMeta();};
 const wkMetaChanged=()=>{if(wkMode==='edit')wkSaveTemplateMeta();};
 const wkSaveTemplateMeta=async()=>{
@@ -1963,7 +1980,7 @@ const wkSaveTemplateMeta=async()=>{
   try{
     const resp=await fetch(`${SB_URL}/rest/v1/ec_kitchen_templates?id=eq.${wkEditingTemplateId}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({name,cadence,category})});
     if(!resp.ok) throw new Error(`Template update failed ${resp.status}`);
-    kitchenTemplatesById[wkEditingTemplateId]={...t,name,cadence,category};
+    wkSyncTemplateInMemory(wkEditingTemplateId,{...t,name,cadence,category});
   }catch(e){console.error('wkSaveTemplateMeta failed',e);alert('Save failed — try again.');}
 };
 // Shared by every field-structure mutation below (add/rename/remove/restore/
@@ -1974,7 +1991,7 @@ const wkPatchTemplateFields=async newFields=>{
   if(!t)return;
   const resp=await fetch(`${SB_URL}/rest/v1/ec_kitchen_templates?id=eq.${wkEditingTemplateId}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({fields:newFields})});
   if(!resp.ok) throw new Error(`Template fields update failed ${resp.status}`);
-  kitchenTemplatesById[wkEditingTemplateId]={...t,fields:newFields};
+  wkSyncTemplateInMemory(wkEditingTemplateId,{...t,fields:newFields});
   wkRerenderTemplateInstances(wkEditingTemplateId);
 };
 // Combine — reactivated from the original (pre-Phase-3) Kitchen spec: pull
@@ -2037,7 +2054,11 @@ const deleteKitchenTemplate=async templateId=>{
     const allKitchenWidgets=await sbFetchJson(`${SB_URL}/rest/v1/ec_page_widgets?widget_type=eq.kitchen&select=*`);
     const affected=allKitchenWidgets.filter(w=>String(w.config?.templateId)===String(templateId));
     for(const w of affected){
-      const newConfig={kitchen:true,category:t.category,cadence:t.cadence,fields:JSON.parse(JSON.stringify(t.fields||[]))};
+      // standalone:true marks this widget as DELIBERATELY self-contained —
+      // without it, ensureKitchenTemplate can't tell this apart from a
+      // genuinely-never-migrated pre-Phase-3 widget and will silently
+      // re-migrate it (creating a phantom new template) on its next load.
+      const newConfig={kitchen:true,standalone:true,category:t.category,cadence:t.cadence,fields:JSON.parse(JSON.stringify(t.fields||[]))};
       const resp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets?id=eq.${w.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({config:newConfig})});
       if(!resp.ok) throw new Error(`Sever failed for widget ${w.id}: ${resp.status}`);
       const local=findWidget(w.id); // only set if this widget happens to be on the CURRENT page
@@ -2075,6 +2096,7 @@ const wkeTypeChangeConfirmHtml=f=>{
 const renderWkEditFieldsBody=()=>{
   const t=kitchenTemplatesById[wkEditingTemplateId];
   if(!t)return;
+  renderKitchenFieldsPreview(t.fields,4,document.getElementById('wk-preview'));
   const fields=t.fields||[];
   const live=fields.filter(f=>!f.removed);
   const removed=fields.filter(f=>f.removed);
@@ -2228,8 +2250,10 @@ const wkArrangeChanged=async()=>{
   (Array.isArray(saved)?saved:saved.children||[]).forEach(item=>{posById[item.id]={x:item.x,y:item.y,w:item.w,h:item.h};});
   const newFields=JSON.parse(JSON.stringify(t.fields));
   newFields.filter(f=>!f.removed).forEach(f=>{if(posById[f.id])f.layout=posById[f.id];});
-  try{await wkPatchTemplateFields(newFields);}
-  catch(e){console.error('wkArrangeChanged failed',e);alert('Save failed — try again.');}
+  try{
+    await wkPatchTemplateFields(newFields);
+    renderKitchenFieldsPreview(newFields,4,document.getElementById('wk-preview'));
+  }catch(e){console.error('wkArrangeChanged failed',e);alert('Save failed — try again.');}
 };
 
 // null = creating a new page (the original flow); a page id = editing that
@@ -3780,6 +3804,28 @@ const kitchenFieldInputHtml=(widgetId,field)=>{
   if(field.type==='multiselect')return `<select id="${id}" multiple size="${Math.min((field.options?.choices||[]).length||1,4)}">${(field.options?.choices||[]).map(c=>`<option value="${c}">${c}</option>`).join('')}</select>`;
   return `<input type="text" id="${id}">`;
 };
+// Reusable "what will this widget actually look like" preview. Uses the
+// SAME grid classes/layout math as the real widget card and the Arrange
+// grid (.wk-field-grid, wkFieldDefaultLayout, kitchenFieldInputHtml) so the
+// preview never lies about what you'll actually get. Plain arguments only
+// (fields, columns, a mount element) — no read of any Kitchen-page global —
+// so this is reusable outside Kitchen too (e.g. the deferred Add Widget
+// picker redesign). Inputs are real (every field type renders exactly as it
+// will for real) but inert — the caller's mount element is expected to set
+// pointer-events:none, not this function, so the shared render stays
+// unaware it's ever being used non-interactively.
+const renderKitchenFieldsPreview=(fields,columns,containerEl)=>{
+  if(!containerEl)return;
+  const liveFields=(fields||[]).filter(f=>!f.removed);
+  if(!liveFields.length){containerEl.innerHTML='<div class="empty">No fields yet.</div>';return;}
+  containerEl.innerHTML=`<div class="wk-field-grid" style="display:grid;grid-template-columns:repeat(${columns},1fr);gap:8px">${liveFields.map((f,i)=>{
+    const layout=f.layout||wkFieldDefaultLayout(f,i);
+    const dirNote=f.type==='number_dir'?` <span style="color:var(--muted);font-size:10px">(${f.options?.direction==='lower'?'lower':'higher'} is better)</span>`:'';
+    return `<div class="wk-field-item" style="grid-column:${layout.x+1}/span ${Math.min(layout.w,columns)};grid-row:${layout.y+1}/span ${layout.h}">
+      <div class="wk-field-item-content"><div class="field"><label>${f.name}${dirNote}</label>${kitchenFieldInputHtml('preview',f)}</div></div>
+    </div>`;
+  }).join('')}</div>`;
+};
 // Raw stored values are never coerced based on the field's CURRENT type —
 // a JS boolean/array/number/string is self-describing enough to display
 // correctly regardless of what the field has since become. kitchenFieldTypeAt
@@ -5234,8 +5280,12 @@ const loadWidgets=async()=>{
 // field ids — no identity change for this initial link), and the widget's
 // config shrinks to just {kitchen,templateId}. Skipped entirely once
 // config.templateId is set. Failures just retry on the next load.
+// Also skipped for config.standalone — a widget deliberately severed by
+// deleteKitchenTemplate has no templateId either, but is NOT a legacy
+// widget waiting to be migrated; without this check it would silently get
+// re-migrated into a brand-new phantom template on its next load.
 const ensureKitchenTemplate=async w=>{
-  if(w.config?.templateId)return;
+  if(w.config?.templateId||w.config?.standalone)return;
   const templateId=Date.now();
   const templateRow={id:templateId,name:w.title||'Untitled',category:w.config?.category||WIDGET_CATEGORIES[0],cadence:w.config?.cadence||'daily',fields:w.config?.fields||[]};
   try{
