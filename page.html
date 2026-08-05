@@ -925,7 +925,6 @@ textarea{resize:vertical;min-height:70px;font-family:'DM Mono',monospace}
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">
               <span class="widget-drag-handle" id="wk-live-preview-handle" onclick="wkOpenPreviewSizeMenu(event)" aria-label="Change preview size" title="Change preview size">⠿</span>
-              <span class="widget-fav-btn" aria-hidden="true" tabindex="-1"></span>
               <div class="section-title" style="margin:0">Preview</div>
             </div>
             <div style="display:flex;gap:6px">
@@ -1871,6 +1870,7 @@ const wkGoStep3=()=>{
 const wkBackStep2=()=>{
   document.getElementById('wk-step3').style.display='none';
   document.getElementById('wk-step2').style.display='flex';
+  wkUpdateSubmitButtonVisibility();
   document.getElementById('wk-title').textContent=(wkMode==='edit'?'Edit template':'Widget Kitchen')+' · step 2 of 4';
 };
 // Entering Step 4 IS entering Arrange mode — no separate toggle button;
@@ -3877,6 +3877,29 @@ const kitchenColumnsForWidget=w=>{
   if(window.matchMedia('(max-width:720px)').matches)return 1;
   return KITCHEN_COLUMNS_BY_SIZE[widgetSize(w)]||4;
 };
+// Every field.layout.x/w is captured relative to this column count — Step 4
+// (Arrange) always initializes Gridstack at this reference regardless of
+// display size (see renderWkLivePreviewCurrent), so this is the one true
+// coordinate space stored layouts live in.
+const KITCHEN_REFERENCE_COLUMNS=KITCHEN_COLUMNS_BY_SIZE.full;
+// Proportionally rescales a field's stored x/w down to a smaller target
+// column count — both together, never just clamping width while leaving
+// position unchanged. An unscaled x past the target's real column count
+// becomes an out-of-range grid-column start, forcing the browser to
+// generate a content-sized implicit track (the "sliver" bug). Display-time
+// only — never mutates the stored layout, so viewing a field back at the
+// reference count after passing through smaller sizes is always identical
+// to the original. y/h are untouched — only the column axis is
+// size-picker-relative.
+const kitchenRescaleFieldLayout=(layout,targetColumns)=>{
+  if(targetColumns>=KITCHEN_REFERENCE_COLUMNS)return layout;
+  const scale=targetColumns/KITCHEN_REFERENCE_COLUMNS;
+  let w=Math.max(1,Math.round(layout.w*scale));
+  w=Math.min(w,targetColumns);
+  let x=Math.round(layout.x*scale);
+  x=Math.max(0,Math.min(x,targetColumns-w));
+  return {...layout,x,w};
+};
 // Crossing the 720px breakpoint doesn't trigger any of the app's existing
 // re-renders on its own (unlike setWidgetSize, which already calls
 // renderWidgets() and so already picks up a new column count for free) — a
@@ -3952,7 +3975,7 @@ const renderWkLivePreview=(fields,columns)=>{
   const itemContentClass=willInitGridstack?'grid-stack-item-content wk-field-item-content':'wk-field-item-content';
   body.style.pointerEvents=wkeArranging?'auto':'none'; // structure-only regardless of mode; Arrange is the one exception, needing real pointer interaction for drag/resize
   body.innerHTML=`<div class="${gridClass}${wkeArranging?' wk-arranging':''}" id="wk-live-preview-grid" style="display:grid;grid-template-columns:repeat(${columns},1fr);gap:8px">${liveFields.map((f,i)=>{
-    const layout=f.layout||wkFieldDefaultLayout(f,i);
+    const layout=kitchenRescaleFieldLayout(f.layout||wkFieldDefaultLayout(f,i),columns);
     const dirNote=f.type==='number_dir'?` <span style="color:var(--muted);font-size:10px">(${f.options?.direction==='lower'?'lower':'higher'} is better)</span>`:'';
     return `<div class="${itemClass}" gs-id="${f.id}" gs-x="${layout.x}" gs-y="${layout.y}" gs-w="${layout.w}" gs-h="${layout.h}" style="grid-column:${layout.x+1}/span ${Math.min(layout.w,columns)};grid-row:${layout.y+1}/span ${layout.h}">
       <div class="${itemContentClass}"><div class="field"><label>${f.name}${dirNote}</label>${kitchenFieldInputHtml('preview',f)}</div></div>
@@ -3967,16 +3990,26 @@ const renderWkLivePreview=(fields,columns)=>{
 // create/edit mode or which step is active.
 const wkPreviewColumns=()=>KITCHEN_COLUMNS_BY_SIZE[wkPreviewSize]||4;
 const renderWkLivePreviewCurrent=()=>{
-  renderWkLivePreview(wkCurrentFields(),wkPreviewColumns());
+  // Step 4 (wkeArranging) always initializes Gridstack at the reference
+  // column count, regardless of wkPreviewSize — the size picker is a
+  // display-only preference for STATIC view; letting it leak into Arrange
+  // would mean a field dragged while previewing at "small" gets coordinates
+  // only valid in a 1-column space, corrupting the stored layout the
+  // moment the drag saves. Static display (Steps 1-3, or Step 4 exited)
+  // still honors wkPreviewSize via kitchenRescaleFieldLayout.
+  const columns=wkeArranging?KITCHEN_REFERENCE_COLUMNS:wkPreviewColumns();
+  renderWkLivePreview(wkCurrentFields(),columns);
   wkUpdateSubmitButtonVisibility();
 };
+// Step 4 only — placed where a "Next" button would normally sit at every
+// earlier step. wkSubmitEditor already validates field count/name in create
+// mode and alerts rather than submitting, so there's no need to also gate
+// visibility on hasFields here.
 const wkUpdateSubmitButtonVisibility=()=>{
   const btn=document.getElementById('wk-submit-btn');
   if(!btn)return;
-  const step1=document.getElementById('wk-step1');
-  const step1Visible=step1&&step1.style.display!=='none';
-  const hasFields=wkCurrentFields().filter(f=>!f.removed).length>0;
-  btn.style.display=(!step1Visible&&hasFields)?'block':'none';
+  const step4=document.getElementById('wk-step4');
+  btn.style.display=(step4&&step4.style.display!=='none')?'block':'none';
 };
 // Kitchen-local display preference only — reset to 'full' whenever a
 // template is (re)selected or a new one is started (see wkReset/
@@ -4057,7 +4090,7 @@ function renderKitchenWidget(w){
   const liveFields=kitchenLiveFields(w);
   const columns=kitchenColumnsForWidget(w);
   const inputsHtml=`<div class="wk-field-grid" id="wk-grid-${w.id}" style="display:grid;grid-template-columns:repeat(${columns},1fr);gap:8px">${liveFields.map((f,i)=>{
-    const layout=f.layout||wkFieldDefaultLayout(f,i);
+    const layout=kitchenRescaleFieldLayout(f.layout||wkFieldDefaultLayout(f,i),columns);
     const dirNote=f.type==='number_dir'?` <span style="color:var(--muted);font-size:10px">(${f.options?.direction==='lower'?'lower':'higher'} is better)</span>`:'';
     return `<div class="wk-field-item" style="grid-column:${layout.x+1}/span ${Math.min(layout.w,columns)};grid-row:${layout.y+1}/span ${layout.h}">
       <div class="wk-field-item-content">
