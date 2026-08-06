@@ -3927,6 +3927,25 @@ const loadGridstack=()=>{
     link.integrity='sha384-3466xzONp5jWI9wRY4i5C4LQqPF7wQiNl2TPqqWNEKMxqleN1p3y+uCjs5rObTFv';
     link.crossOrigin='anonymous';
     document.head.appendChild(link);
+    // gridstack.min.css only ever ships hand-authored width/left percentage
+    // rules for its two "designed for" column counts, .gs-1 and .gs-12 (
+    // confirmed directly by downloading and grepping the real file — every
+    // other column count, including the column:4 grid Arrange uses here, has
+    // NO column-axis CSS at all, so items fall back to position:absolute
+    // with no width, i.e. the "sliver" bug). gridstack-extra.min.css is
+    // Gridstack's own dist-shipped supplement, generated from their own
+    // gridstack-extra.scss, covering exactly the gap: real .gs-2 through
+    // .gs-11 width/left rules in the identical attribute-selector pattern as
+    // the main CSS's .gs-12 rules. Confirmed by loading both files together
+    // against real markup and checking the CSSOM: with this file present,
+    // GridStack.init({column:4,...}) items match real, non-zero .gs-4
+    // width/left rules instead of resolving to nothing.
+    const extraLink=document.createElement('link');
+    extraLink.rel='stylesheet';
+    extraLink.href='https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-extra.min.css';
+    extraLink.integrity='sha384-jMuLjAsBfwvyGiR9ynwk0CdSHsXdVoChAJ6lZnWeVxw8SKNVqI8lokdPzE81dYPo';
+    extraLink.crossOrigin='anonymous';
+    document.head.appendChild(extraLink);
     const script=document.createElement('script');
     script.src='https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js';
     script.integrity='sha384-nK6N0YlXqSXYT4GJKLD6y4mPJ9w1v9DtgfsQHqltu+OHCjpKMRZ2koek3LRIcbCK';
@@ -5209,6 +5228,16 @@ let mwpMyTemplates=null; // this owner's Kitchen templates, across every page �
 const mwpFetchMyTemplates=async()=>{
   try{
     mwpMyTemplates=await sbFetchJson(`${SB_URL}/rest/v1/ec_kitchen_templates?select=*`);
+    // wkSelectTemplate reads kitchenTemplatesById directly and silently
+    // no-ops if a template isn't in it — previously that map was only ever
+    // populated by loadWidgets()'s page-load batch fetch (templates that
+    // already have an instance on THIS page), so opening Kitchen and
+    // picking a template with no instance on the current page (or none
+    // fetched yet this session) did nothing. Every template this fetch
+    // returns is one the owner can select from the list, so sync it here
+    // too — same "every template the user owns is selectable" guarantee
+    // openWidgetKitchen()'s own await on this function is meant to provide.
+    mwpMyTemplates.forEach(t=>{kitchenTemplatesById[t.id]=t;});
   }catch(e){
     console.error('mwpFetchMyTemplates failed',e);
     mwpMyTemplates=[];
