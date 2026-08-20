@@ -78,6 +78,16 @@ header{padding:1.1rem 2rem;border-bottom:1px solid var(--border);box-shadow:0 1p
 .widget-row>.card.size-small{flex:0 1 200px;max-width:200px}
 .widget-row>.card.size-quarter{flex:0 1 calc(25% - 12px);max-width:calc(25% - 12px)}
 .widget-row>.card.size-half{flex:0 1 calc(50% - 8px);max-width:calc(50% - 8px)}
+/* Same width values as the real .size-small/.size-quarter/.size-half rules
+   above, applied directly to the Kitchen preview card instead of via
+   .widget-row>.card (the preview card isn't a flex sibling of real widget
+   cards, so that combinator never matches it) -- this is what makes the
+   size picker actually simulate a placed widget's physical size, not just
+   its internal column count. "Full" gets no rule: same as a real full card,
+   it's simply unconstrained. */
+#wk-live-preview-card.wk-preview-size-small{width:200px;max-width:200px}
+#wk-live-preview-card.wk-preview-size-quarter{width:calc(25% - 12px);max-width:calc(25% - 12px)}
+#wk-live-preview-card.wk-preview-size-half{width:calc(50% - 8px);max-width:calc(50% - 8px)}
 .tab-bar{display:flex;border-bottom:1px solid var(--border);box-shadow:0 1px 12px -2px color-mix(in srgb,var(--accent-default) 35%,transparent);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
 .tab-bar::-webkit-scrollbar{display:none}
 .tab-btn{padding:10px 18px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;font-family:'DM Sans',sans-serif}
@@ -3810,7 +3820,13 @@ const kitchenLiveFields=w=>kitchenFieldsFor(w).filter(f=>!f.removed);
 // reproducing the pre-Phase-2 flat-stack look exactly so nothing visually
 // changes until a user actually drags something. One constant height works
 // uniformly since all 9 field types render as single-line inputs.
-const wkFieldDefaultLayout=(field,index)=>({x:0,y:index*2,w:4,h:2});
+// Half-width (not full-row) so a freshly-added field already has room to
+// visibly shrink further/grow at the size picker or in Arrange, instead of
+// always spanning the whole row regardless of target column count (a
+// full-width field's rescaled span stays "the whole row" at every size,
+// which is what made the size picker look like it did nothing on an
+// unarranged template).
+const wkFieldDefaultLayout=(field,index)=>({x:0,y:index*2,w:2,h:2});
 // PR detection — only ever called for a field whose CURRENT type is
 // number_dir. Compares against prior entries within the field's own
 // CURRENT, still-open typeHistory era only (era.activeFrom onward) — never
@@ -4018,6 +4034,11 @@ const renderWkLivePreviewCurrent=()=>{
   // still honors wkPreviewSize via kitchenRescaleFieldLayout.
   const columns=wkeArranging?KITCHEN_REFERENCE_COLUMNS:wkPreviewColumns();
   renderWkLivePreview(wkCurrentFields(),columns);
+  const card=document.getElementById('wk-live-preview-card');
+  if(card){
+    card.classList.remove('wk-preview-size-small','wk-preview-size-quarter','wk-preview-size-half','wk-preview-size-full');
+    card.classList.add(`wk-preview-size-${wkPreviewSize}`);
+  }
   wkUpdateSubmitButtonVisibility();
 };
 // Step 4 only — placed where a "Next" button would normally sit at every
