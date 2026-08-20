@@ -2384,7 +2384,11 @@ const wkArrangeChanged=async()=>{
   const posById={};
   (Array.isArray(saved)?saved:saved.children||[]).forEach(item=>{posById[item.id]={x:item.x,y:item.y,w:item.w,h:item.h};});
   const fields=JSON.parse(JSON.stringify(wkCurrentFields()));
-  fields.filter(f=>!f.removed).forEach(f=>{if(posById[f.id])f.layout=posById[f.id];});
+  // Arrange always runs at KITCHEN_REFERENCE_COLUMNS, so anything written
+  // here is captured at the CURRENT reference — stamp it, or the next load
+  // sees no marker, assumes legacy, and rescales an already-correct layout
+  // a second time on top of itself.
+  fields.filter(f=>!f.removed).forEach(f=>{if(posById[f.id]){f.layout=posById[f.id];f.layoutReferenceColumns=KITCHEN_REFERENCE_COLUMNS;}});
   try{
     if(wkMode==='create'){wkFields=fields;}
     else{await wkPatchTemplateFields(fields);}
@@ -3826,7 +3830,7 @@ const kitchenLiveFields=w=>kitchenFieldsFor(w).filter(f=>!f.removed);
 // full-width field's rescaled span stays "the whole row" at every size,
 // which is what made the size picker look like it did nothing on an
 // unarranged template).
-const wkFieldDefaultLayout=(field,index)=>({x:0,y:index*2,w:2,h:2});
+const wkFieldDefaultLayout=(field,index)=>({x:0,y:index*2,w:Math.round(KITCHEN_REFERENCE_COLUMNS/2),h:2});
 // PR detection — only ever called for a field whose CURRENT type is
 // number_dir. Compares against prior entries within the field's own
 // CURRENT, still-open typeHistory era only (era.activeFrom onward) — never
@@ -3896,8 +3900,21 @@ const kitchenColumnsForWidget=w=>{
 // Every field.layout.x/w is captured relative to this column count — Step 4
 // (Arrange) always initializes Gridstack at this reference regardless of
 // display size (see renderWkLivePreviewCurrent), so this is the one true
-// coordinate space stored layouts live in.
-const KITCHEN_REFERENCE_COLUMNS=KITCHEN_COLUMNS_BY_SIZE.full;
+// coordinate space stored layouts live in. Independent of
+// KITCHEN_COLUMNS_BY_SIZE on purpose (was previously ===
+// KITCHEN_COLUMNS_BY_SIZE.full by coincidence) — that constant is the real-
+// card/preview DISPLAY bucket mapping, a separate concept from how fine a
+// grid Arrange itself snaps to. 12 specifically: an exact multiple of the
+// old reference (4), so the one-time migration below is a lossless integer
+// scale (never approximate/rounded), and it's the highest column count
+// Gridstack 10.3.1 ships real native column-axis CSS for at all (1 and 12
+// in the base gridstack.min.css, 2-11 only via the now-unneeded
+// gridstack-extra.min.css supplement) — going any higher would mean hand-
+// authoring custom column CSS, the exact fragility last round's fix
+// eliminated. Real widget cards stay capped at KITCHEN_COLUMNS_BY_SIZE's
+// own ≤4 columns regardless — this only makes Arrange's OWN drag/snap feel
+// finer, it can't and doesn't change what a placed card ever renders.
+const KITCHEN_REFERENCE_COLUMNS=12;
 // Proportionally rescales a field's stored x/w down to a smaller target
 // column count — both together, never just clamping width while leaving
 // position unchanged. An unscaled x past the target's real column count
@@ -3943,25 +3960,17 @@ const loadGridstack=()=>{
     link.integrity='sha384-3466xzONp5jWI9wRY4i5C4LQqPF7wQiNl2TPqqWNEKMxqleN1p3y+uCjs5rObTFv';
     link.crossOrigin='anonymous';
     document.head.appendChild(link);
-    // gridstack.min.css only ever ships hand-authored width/left percentage
-    // rules for its two "designed for" column counts, .gs-1 and .gs-12 (
-    // confirmed directly by downloading and grepping the real file — every
-    // other column count, including the column:4 grid Arrange uses here, has
-    // NO column-axis CSS at all, so items fall back to position:absolute
-    // with no width, i.e. the "sliver" bug). gridstack-extra.min.css is
-    // Gridstack's own dist-shipped supplement, generated from their own
-    // gridstack-extra.scss, covering exactly the gap: real .gs-2 through
-    // .gs-11 width/left rules in the identical attribute-selector pattern as
-    // the main CSS's .gs-12 rules. Confirmed by loading both files together
-    // against real markup and checking the CSSOM: with this file present,
-    // GridStack.init({column:4,...}) items match real, non-zero .gs-4
-    // width/left rules instead of resolving to nothing.
-    const extraLink=document.createElement('link');
-    extraLink.rel='stylesheet';
-    extraLink.href='https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-extra.min.css';
-    extraLink.integrity='sha384-jMuLjAsBfwvyGiR9ynwk0CdSHsXdVoChAJ6lZnWeVxw8SKNVqI8lokdPzE81dYPo';
-    extraLink.crossOrigin='anonymous';
-    document.head.appendChild(extraLink);
+    // gridstack.min.css natively ships real width/left percentage CSS for
+    // exactly two column counts, .gs-1 and .gs-12 (confirmed by downloading
+    // and grepping the real file). KITCHEN_REFERENCE_COLUMNS is pinned to
+    // 12 specifically so Arrange's one live GridStack.init call — the only
+    // place this app ever inits Gridstack at all — always lands on .gs-12,
+    // which this base file already fully covers. No supplemental stylesheet
+    // needed: an earlier round briefly added gridstack-extra.min.css to
+    // cover column:4 (before the reference was bumped to 12), but once
+    // Arrange only ever runs at 12, that file has zero remaining call sites
+    // — shipping it would just be an unused CDN fetch with an integrity
+    // hash to maintain for no reason.
     const script=document.createElement('script');
     script.src='https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js';
     script.integrity='sha384-nK6N0YlXqSXYT4GJKLD6y4mPJ9w1v9DtgfsQHqltu+OHCjpKMRZ2koek3LRIcbCK';
@@ -4036,8 +4045,17 @@ const renderWkLivePreviewCurrent=()=>{
   renderWkLivePreview(wkCurrentFields(),columns);
   const card=document.getElementById('wk-live-preview-card');
   if(card){
+    // Same decoupling as the columns line above, applied to the card's
+    // physical WIDTH instead of its column count: at KITCHEN_REFERENCE_
+    // COLUMNS=12, a "small" (200px) card squeezed around a live 12-column
+    // Gridstack would give ~9px/column — an unusable drag target. Forcing
+    // full width while arranging (wkPreviewSize itself is untouched, still
+    // honored the moment Step 4 is exited) doesn't add any guard to
+    // wkOpenPreviewSizeMenu itself — that stays clickable at every step per
+    // standing instruction, this only affects the resulting width class.
+    const sizeForCardWidth=wkeArranging?'full':wkPreviewSize;
     card.classList.remove('wk-preview-size-small','wk-preview-size-quarter','wk-preview-size-half','wk-preview-size-full');
-    card.classList.add(`wk-preview-size-${wkPreviewSize}`);
+    card.classList.add(`wk-preview-size-${sizeForCardWidth}`);
   }
   wkUpdateSubmitButtonVisibility();
 };
@@ -5259,6 +5277,12 @@ const mwpFetchMyTemplates=async()=>{
     // too — same "every template the user owns is selectable" guarantee
     // openWidgetKitchen()'s own await on this function is meant to provide.
     mwpMyTemplates.forEach(t=>{kitchenTemplatesById[t.id]=t;});
+    // Second entry point a template can first reach kitchenTemplatesById
+    // through (the other is loadWidgets()'s page-load batch fetch) -- same
+    // lazy layout-resolution migration needs to run here too, or a template
+    // with no instance on the currently loaded page would never get
+    // converted until something else happened to fetch it.
+    await Promise.all(mwpMyTemplates.map(ensureKitchenTemplateLayoutResolution));
   }catch(e){
     console.error('mwpFetchMyTemplates failed',e);
     mwpMyTemplates=[];
@@ -5586,10 +5610,16 @@ const loadWidgets=async()=>{
   // Date.now()-based template id. Migration is rare (one-time, per
   // pre-Phase-3 widget) so the lack of parallelism here doesn't matter.
   for(const w of pageWidgets.filter(w=>w.widget_type==='kitchen')) await ensureKitchenTemplate(w);
+  // Parallel, unlike the migration loop above: this only PATCHes already-
+  // existing, already-distinct widget ids (no Date.now()-derived id being
+  // created), so there's no collision to avoid sequencing against.
+  await Promise.all(pageWidgets.filter(w=>w.widget_type==='kitchen').map(ensureStandaloneFieldLayoutResolution));
   const idsToFetch=[...new Set(pageWidgets.filter(w=>w.widget_type==='kitchen'&&w.config?.templateId).map(w=>w.config.templateId))].filter(id=>!kitchenTemplatesById[id]);
   if(idsToFetch.length){
     try{
-      (await sbFetchJson(`${SB_URL}/rest/v1/ec_kitchen_templates?id=in.(${idsToFetch.join(',')})&select=*`)).forEach(r=>kitchenTemplatesById[r.id]=r);
+      const fetched=await sbFetchJson(`${SB_URL}/rest/v1/ec_kitchen_templates?id=in.(${idsToFetch.join(',')})&select=*`);
+      fetched.forEach(r=>kitchenTemplatesById[r.id]=r);
+      await Promise.all(fetched.map(ensureKitchenTemplateLayoutResolution));
     }catch(e){console.error('kitchen template fetch failed',e);}
   }
   renderTabBar();
@@ -5619,6 +5649,58 @@ const ensureKitchenTemplate=async w=>{
   }catch(e){
     console.error('ensureKitchenTemplate failed',w.id,e);
   }
+};
+// One-time layout-resolution migration, same lazy on-first-encounter shape
+// as ensureKitchenTemplate above but for a different problem: every field's
+// stored layout.x/w was captured relative to whatever KITCHEN_REFERENCE_
+// COLUMNS was AT THE TIME (4, before this round bumped it to 12). Per-field
+// marker, not a new column on ec_kitchen_templates — that row's only jsonb
+// blob (fields) is a bare array, so a per-template marker would need either
+// real DDL (breaks the no-DDL precedent layout/standalone/category all
+// followed) or a synthetic non-field sentinel injected into the array
+// (fragile — kitchenLiveFields/kitchenFieldTypeAt/type-history logic all
+// assume every array entry is a real field). A per-field key has neither
+// problem — additive JSON, same evolution precedent as layout itself.
+const KITCHEN_LEGACY_REFERENCE_COLUMNS=4; // what every un-stamped field's layout was captured against, before this marker existed
+const ensureFieldLayoutResolution=field=>{
+  if(!field.layout)return field; // nothing stored yet -- a fresh default is computed on demand at whatever the CURRENT reference is, nothing to convert
+  const from=field.layoutReferenceColumns||KITCHEN_LEGACY_REFERENCE_COLUMNS;
+  if(from===KITCHEN_REFERENCE_COLUMNS)return field; // already current -- also what makes this idempotent across repeated loads
+  const scale=KITCHEN_REFERENCE_COLUMNS/from;
+  return {...field,layoutReferenceColumns:KITCHEN_REFERENCE_COLUMNS,layout:{...field.layout,x:Math.round(field.layout.x*scale),w:Math.max(1,Math.round(field.layout.w*scale))}}; // y/h untouched -- row axis isn't column-reference-relative
+};
+const ensureKitchenTemplateLayoutResolution=async template=>{
+  const converted=(template.fields||[]).map(ensureFieldLayoutResolution);
+  if(converted.every((f,i)=>f===template.fields[i]))return; // nothing changed -- every field already current
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_kitchen_templates?id=eq.${template.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({fields:converted})});
+    if(!resp.ok)throw new Error(`Layout migration failed ${resp.status}`);
+  }catch(e){
+    console.error('ensureKitchenTemplateLayoutResolution failed',template.id,e); // safe to retry next load -- the marker check above is idempotent
+  }
+  template.fields=converted; // update in-memory regardless of PATCH outcome, so THIS session renders correctly even if persistence failed
+};
+// Standalone widgets (config.standalone===true, fields on config.fields
+// directly, severed from a deleted template by deleteKitchenTemplate) carry
+// the identical old-resolution layout data and bypass kitchenTemplatesById
+// entirely, so the migration above never reaches them -- same bug, a
+// different storage path. Only load-bearing for widgets already standalone
+// BEFORE this shipped: deleteKitchenTemplate deep-copies a template's
+// fields at the moment of severance, so anything severed after this ships
+// (or after its source template was already migrated) inherits a correct
+// marker automatically.
+const ensureStandaloneFieldLayoutResolution=async w=>{
+  if(!w.config?.standalone)return;
+  const converted=(w.config.fields||[]).map(ensureFieldLayoutResolution);
+  if(converted.every((f,i)=>f===w.config.fields[i]))return;
+  const newConfig={...w.config,fields:converted};
+  try{
+    const resp=await fetch(`${SB_URL}/rest/v1/ec_page_widgets?id=eq.${w.id}`,{method:'PATCH',headers:buildHeaders(),body:JSON.stringify({config:newConfig})});
+    if(!resp.ok)throw new Error(`Standalone layout migration failed ${resp.status}`);
+  }catch(e){
+    console.error('ensureStandaloneFieldLayoutResolution failed',w.id,e);
+  }
+  w.config=newConfig;
 };
 
 const showPageError=()=>{
